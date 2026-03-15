@@ -116,9 +116,9 @@ export default function App() {
           className="w-full max-w-md rounded-2xl p-6"
           style={{ background: "white", border: "1px solid rgba(59,130,246,0.09)", boxShadow: "0 8px 30px rgba(59,130,246,0.08)" }}
         >
-          <h2 className="text-xl font-bold" style={{ color: "#0F1F3D" }}>Backend Login Required</h2>
+          <h2 className="text-xl font-bold" style={{ color: "#0F1F3D" }}>Login Required</h2>
           <p className="text-sm mt-1 mb-4" style={{ color: "#64748B" }}>
-            Sign in to connect frontend with API endpoints.
+            Sign in to continue to Mediscript.
           </p>
 
           <div className="flex flex-col gap-3">

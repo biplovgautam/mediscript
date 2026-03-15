@@ -64,7 +64,7 @@ export function Sidebar({ active, onNav, user, onLogout }: SidebarProps) {
           <Activity size={16} color="white" strokeWidth={2.5} />
         </div>
         <span className="text-white font-semibold text-[15px] tracking-[-0.3px]">
-          Medi<span style={{ color: "#818CF8" }}>Note</span>
+          Medi<span style={{ color: "#818CF8" }}>Script</span>
         </span>
       </div>
 
