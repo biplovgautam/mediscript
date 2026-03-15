@@ -5,3 +5,4 @@ speechbrain
 torch
 torchaudio
 python-dotenv
+openai-whisper
