@@ -6,6 +6,7 @@ import { ConsultationView } from "@/components/ConsultationView";
 import { SummaryView } from "@/components/SummaryView";
 import { HistoryView, PatientView, SettingsView } from "@/components/OtherViews";
 import { Bell, Search, MessageSquare } from "lucide-react";
+import { api, setApiToken, type AuthUser } from "@/lib/api";
 
 const GREET = (() => {
   const h = new Date().getHours();
@@ -26,7 +27,37 @@ export default function App() {
     window.location.pathname.startsWith("/app") ? "app" : "landing"
   );
   const [view, setView] = useState("dashboard");
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem("mediscript.token"));
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [email, setEmail] = useState("prashant@gmail.com");
+  const [password, setPassword] = useState("hello");
   const meta = topbarMeta[view] ?? topbarMeta.dashboard;
+
+  useEffect(() => {
+    setApiToken(token);
+    if (!token) {
+      setUser(null);
+      return;
+    }
+
+    setAuthLoading(true);
+    api
+      .getMe()
+      .then((me) => {
+        setUser(me);
+      })
+      .catch(() => {
+        localStorage.removeItem("mediscript.token");
+        setToken(null);
+        setUser(null);
+      })
+      .finally(() => {
+        setAuthLoading(false);
+      });
+  }, [token]);
 
   useEffect(() => {
     const onPopState = () => {
@@ -41,8 +72,81 @@ export default function App() {
     setRoute("app");
   }
 
+  const handleLogin = async () => {
+    setAuthError("");
+    setAuthLoading(true);
+    try {
+      const response = await api.login(email.trim(), password);
+      localStorage.setItem("mediscript.token", response.token);
+      setToken(response.token);
+      setUser(response.user);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Unable to login");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await api.logout();
+    } catch {
+      // Ignore logout network errors; client-side token clear is source of truth.
+    }
+    localStorage.removeItem("mediscript.token");
+    setToken(null);
+    setUser(null);
+    setSessionId(null);
+  };
+
   if (route === "landing") {
     return <LandingPage onEnterApp={goToApp} />;
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-5" style={{ background: "#F0F5FB" }}>
+        <div
+          className="w-full max-w-md rounded-2xl p-6"
+          style={{ background: "white", border: "1px solid rgba(59,130,246,0.09)", boxShadow: "0 8px 30px rgba(59,130,246,0.08)" }}
+        >
+          <h2 className="text-xl font-bold" style={{ color: "#0F1F3D" }}>Backend Login Required</h2>
+          <p className="text-sm mt-1 mb-4" style={{ color: "#64748B" }}>
+            Sign in to connect frontend with API endpoints.
+          </p>
+
+          <div className="flex flex-col gap-3">
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              type="email"
+              placeholder="Email"
+              className="w-full rounded-xl px-3 py-[10px] text-sm outline-none"
+              style={{ background: "#F8FAFC", border: "1.5px solid rgba(59,130,246,0.15)", color: "#0F1F3D" }}
+            />
+            <input
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              type="password"
+              placeholder="Password"
+              className="w-full rounded-xl px-3 py-[10px] text-sm outline-none"
+              style={{ background: "#F8FAFC", border: "1.5px solid rgba(59,130,246,0.15)", color: "#0F1F3D" }}
+            />
+            <button
+              disabled={authLoading}
+              onClick={handleLogin}
+              className="rounded-xl py-[10px] text-sm font-semibold text-white disabled:opacity-60"
+              style={{ background: "linear-gradient(135deg, #2563EB, #6366F1)" }}
+            >
+              {authLoading ? "Signing in..." : "Sign In"}
+            </button>
+            {authError && (
+              <div className="text-sm" style={{ color: "#DC2626" }}>{authError}</div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -109,7 +213,9 @@ export default function App() {
           ))}
 
           {/* Avatar */}
-          <div
+          <button
+            title={user.fullName}
+            onClick={handleLogout}
             className="w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-bold text-white cursor-pointer flex-shrink-0"
             style={{
               background: "linear-gradient(135deg, #2563EB, #6366F1)",
@@ -117,15 +223,27 @@ export default function App() {
               boxShadow: "0 2px 8px rgba(37,99,235,0.3)",
             }}
           >
-            DS
-          </div>
+            {user.fullName
+              .split(" ")
+              .slice(0, 2)
+              .map((part) => part[0])
+              .join("")
+              .toUpperCase()}
+          </button>
         </header>
 
         {/* ── Content ── */}
         <main className="flex-1 overflow-y-auto p-6">
           {view === "dashboard"    && <DashboardView onNewConsult={() => setView("consultation")} />}
-          {view === "consultation" && <ConsultationView onComplete={() => setView("notes")} />}
-          {view === "notes"        && <SummaryView onNew={() => setView("consultation")} />}
+          {view === "consultation" && (
+            <ConsultationView
+              onComplete={(createdSessionId) => {
+                setSessionId(createdSessionId);
+                setView("notes");
+              }}
+            />
+          )}
+          {view === "notes"        && <SummaryView sessionId={sessionId} onNew={() => setView("consultation")} />}
           {view === "history"      && <HistoryView />}
           {view === "patients"     && <PatientView />}
           {view === "settings"     && <SettingsView />}
