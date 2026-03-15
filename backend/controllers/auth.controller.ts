@@ -1,6 +1,8 @@
 import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import User from '../models/user.model.js';
+import mongoose from 'mongoose';
+import User, { UserRole } from '../models/user.model.js';
+import Hospital from '../models/hospital.model.js';
 import  { generateToken } from '../security/jwt-util.js'; // adjust path
 
 // @desc    Login user
@@ -43,20 +45,33 @@ export const login = async (req: Request, res: Response) => {
   }
 };
 
-// @desc    Register new user (admin only)
+// @desc    Register new user
 // @route   POST /api/auth/register
-// @access  Private/Admin
+// @access  Public
 export const register = async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      res.status(401).json({ message: 'Not authorized' });
+    const { email, fullName, password, role, phone, profileImageUrl } = req.body;
+
+    if (!email || !fullName || !password) {
+      res.status(400).json({ message: 'email, fullName and password are required' });
       return;
     }
 
-    const { email, fullName, password, role, phone, profileImageUrl } = req.body;
+    // DEV: auto-resolve a default hospital so registration needs no hospital fields
+    const DEV_HOSPITAL_CODE = 'DEV_DEFAULT';
+    let devHospital = await Hospital.findOne({ code: DEV_HOSPITAL_CODE }).select('_id');
+    if (!devHospital) {
+      devHospital = await Hospital.create({
+        name: 'Development Hospital',
+        code: DEV_HOSPITAL_CODE,
+      });
+    }
+    const resolvedHospitalId = String(devHospital._id);
+
+    const normalizedRole: string = typeof role === 'string' && role.trim() ? role.trim() : UserRole.DOCTOR;
 
     const existingUser = await User.findOne({
-      hospitalId: req.user.hospitalId,
+      hospitalId: resolvedHospitalId,
       email,
     });
     if (existingUser) {
@@ -65,11 +80,11 @@ export const register = async (req: Request, res: Response) => {
     }
 
     const user = await User.create({
-      hospitalId: req.user.hospitalId,
+      hospitalId: resolvedHospitalId,
       email,
       fullName,
       passwordHash: password, // will be hashed by pre-save hook
-      role,
+      role: normalizedRole,
       phone,
       profileImageUrl,
       emailVerified: false,
