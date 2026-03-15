@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { LandingPage } from "@/components/LandingPage";
 import { Sidebar } from "@/components/Sidebar";
 import { DashboardView } from "@/components/DashboardView";
 import { ConsultationView } from "@/components/ConsultationView";
@@ -21,8 +22,28 @@ const topbarMeta: Record<string, { title: string; sub: string }> = {
 };
 
 export default function App() {
+  const [route, setRoute] = useState<"landing" | "app">(() =>
+    window.location.pathname.startsWith("/app") ? "app" : "landing"
+  );
   const [view, setView] = useState("dashboard");
   const meta = topbarMeta[view] ?? topbarMeta.dashboard;
+
+  useEffect(() => {
+    const onPopState = () => {
+      setRoute(window.location.pathname.startsWith("/app") ? "app" : "landing");
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  function goToApp() {
+    window.history.pushState({}, "", "/app");
+    setRoute("app");
+  }
+
+  if (route === "landing") {
+    return <LandingPage onEnterApp={goToApp} />;
+  }
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "#F0F5FB", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
