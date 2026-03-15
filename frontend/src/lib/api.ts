@@ -143,6 +143,14 @@ export type UploadSessionAudioResponse = {
   recording: AudioRecording | null;
   transcript?: string;
   segments?: TranscriptSegment[];
+  analysis?: {
+    complaint?: string;
+    symptoms?: string;
+    history?: string;
+    diagnosis?: string;
+    rx?: string;
+    followup?: string;
+  } | null;
 };
 
 export type ConsultationNote = {

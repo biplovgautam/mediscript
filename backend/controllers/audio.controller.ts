@@ -114,6 +114,7 @@ export const uploadSessionAudio = async (req: Request, res: Response) => {
 		let transcribedText = "";
 		let aiSegments = [];
 		let responseSegments: Array<Record<string, unknown>> = [];
+		let aiAnalysis: Record<string, unknown> | null = null;
 		try {
 			const AI_URL = process.env.AI_SERVICE_URL || 'http://127.0.0.1:8000';
 			console.log(`[audio.upload][${requestId ?? 'n/a'}] Forwarding to AI: ${AI_URL}/api/ai/transcribe`);
@@ -145,6 +146,10 @@ export const uploadSessionAudio = async (req: Request, res: Response) => {
 					`[audio.upload][${requestId ?? 'n/a'}] AI success segments=${Array.isArray(data.segments) ? data.segments.length : 0}`
 				);
 				
+				if (data?.analysis && typeof data.analysis === 'object') {
+					aiAnalysis = data.analysis as Record<string, unknown>;
+				}
+
 				if (Array.isArray(data.segments) && data.segments.length > 0) {
 					if (recording?._id) {
 						await TranscriptSegment.deleteMany({
@@ -158,10 +163,12 @@ export const uploadSessionAudio = async (req: Request, res: Response) => {
 					);
 
 					aiSegments = cleanedSegments.map((seg: any, index: number) => {
+						const roleLabel = seg.speaker || seg.role;
+						const normalizedRole = typeof roleLabel === 'string' ? roleLabel.trim().toLowerCase() : '';
 						const role =
-							seg.role === 'Doctor'
+							normalizedRole === 'doctor'
 								? SpeakerRole.DOCTOR
-								: seg.role === 'Patient'
+								: normalizedRole === 'patient'
 									? SpeakerRole.PATIENT
 									: SpeakerRole.UNKNOWN;
 						const startMs =
@@ -177,7 +184,7 @@ export const uploadSessionAudio = async (req: Request, res: Response) => {
 							endMs,
 							text: String(seg.text || '').trim(),
 							speakerRole: role,
-							speakerLabel: seg.role,
+							speakerLabel: roleLabel,
 							source: TranscriptSource.AI,
 						};
 					});
@@ -215,7 +222,8 @@ export const uploadSessionAudio = async (req: Request, res: Response) => {
 		res.status(201).json({ 
 			recording, 
 			transcript: transcribedText, 
-			segments: responseSegments 
+			segments: responseSegments,
+			analysis: aiAnalysis
 		});
 		return;
 	} catch (error) {

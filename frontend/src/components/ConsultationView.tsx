@@ -33,6 +33,8 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [hasUploaded, setHasUploaded] = useState(false);
+  const [transcriptSaved, setTranscriptSaved] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -142,6 +144,8 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
       setElapsed(0);
       setTranscript([]);
       setAiData({});
+      setHasUploaded(false);
+      setTranscriptSaved(false);
       timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
       setLoading(false);
     } catch (mediaError) {
@@ -230,6 +234,19 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
       if (import.meta.env.DEV) {
         console.log("[consultation] upload response", uploadResponse);
       }
+      setHasUploaded(true);
+      setTranscriptSaved(false);
+
+      if (uploadResponse.analysis) {
+        setAiData({
+          complaint: uploadResponse.analysis.complaint || "",
+          symptoms: uploadResponse.analysis.symptoms || "",
+          history: uploadResponse.analysis.history || "",
+          diagnosis: uploadResponse.analysis.diagnosis || "",
+          rx: uploadResponse.analysis.rx || "",
+          followup: uploadResponse.analysis.followup || "",
+        });
+      }
 
       if (uploadResponse.segments?.length) {
         const lines = uploadResponse.segments
@@ -261,6 +278,10 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
       setError("Start consultation first to save transcript");
       return;
     }
+    if (!hasUploaded) {
+      setError("Stop & Transcribe first to upload audio");
+      return;
+    }
     if (!transcript.length) {
       setError("No transcript available to save yet");
       return;
@@ -269,14 +290,34 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
     setLoading(true);
     setError("");
     try {
-      await api.replaceTranscriptSegments(
-        sessionId,
-        transcript.map((line) => ({
+      try {
+        await api.replaceTranscriptSegments(
+          sessionId,
+          transcript.map((line) => ({
+            text: line.text,
+            speakerRole: line.speaker === "Doctor" ? "DOCTOR" : line.speaker === "Patient" ? "PATIENT" : "UNKNOWN",
+            speakerLabel: line.speaker,
+          }))
+        );
+        setTranscriptSaved(true);
+        return;
+      } catch (replaceError) {
+        const message =
+          replaceError instanceof Error ? replaceError.message : "Unable to save transcript";
+        if (!message.includes("404") && !message.includes("Not found")) {
+          throw replaceError;
+        }
+      }
+
+      for (const line of transcript) {
+        await api.appendTranscriptChunk(sessionId, {
           text: line.text,
           speakerRole: line.speaker === "Doctor" ? "DOCTOR" : line.speaker === "Patient" ? "PATIENT" : "UNKNOWN",
           speakerLabel: line.speaker,
-        }))
-      );
+          source: "MANUAL",
+        });
+      }
+      setTranscriptSaved(true);
     } catch (apiError) {
       setError(apiError instanceof Error ? apiError.message : "Unable to save transcript");
     } finally {
@@ -286,100 +327,166 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
 
   const mins = String(Math.floor(elapsed / 60)).padStart(2, "0");
   const secs = String(elapsed % 60).padStart(2, "0");
+  const sessionStarted = Boolean(sessionId);
+  const steps = [
+    { label: "Patient selected", done: Boolean(fetchedPatient?._id) },
+    { label: "Recording started", done: recording || sessionStarted },
+    { label: "Audio uploaded", done: hasUploaded },
+    { label: "Transcript saved", done: transcriptSaved },
+  ];
 
   return (
     <div className="flex flex-col gap-4">
       {/* Patient info */}
-      <div
-        className="rounded-2xl p-5"
-        style={{ background: "#FFFFFF", border: "1px solid rgba(59,130,246,0.09)", boxShadow: "0 2px 12px rgba(59,130,246,0.06)" }}
-      >
-        <h2 className="text-[14px] font-semibold mb-4 flex items-center gap-2" style={{ color: "#0F1F3D" }}>
-          <span className="w-5 h-5 rounded flex items-center justify-center" style={{ background: "#EFF6FF" }}>
-            <FileText size={12} style={{ color: "#2563EB" }} />
-          </span>
-          Patient Details
-        </h2>
-        <div className="grid grid-cols-3 gap-4">
-          <div>
-            <label className="block text-[12px] font-medium mb-1" style={{ color: "#5B7394" }}>Find Patient</label>
-            <div className="flex gap-2">
+      <div className="grid gap-4" style={{ gridTemplateColumns: "1.2fr 0.8fr" }}>
+        <div
+          className="rounded-2xl p-5"
+          style={{ background: "#FFFFFF", border: "1px solid rgba(59,130,246,0.09)", boxShadow: "0 2px 12px rgba(59,130,246,0.06)" }}
+        >
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-[14px] font-semibold flex items-center gap-2" style={{ color: "#0F1F3D" }}>
+              <span className="w-5 h-5 rounded flex items-center justify-center" style={{ background: "#EFF6FF" }}>
+                <FileText size={12} style={{ color: "#2563EB" }} />
+              </span>
+              Patient & Visit
+            </h2>
+            <span className="text-[11px] uppercase tracking-[0.08em]" style={{ color: "#94A3B8" }}>
+              Step 1
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="block text-[12px] font-medium mb-1" style={{ color: "#5B7394" }}>Find Patient</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={patientSearch}
+                  onChange={(e) => setPatientSearch(e.target.value)}
+                  placeholder="Name or ID"
+                  className="flex-1 rounded-xl px-3 py-[9px] text-[13.5px] outline-none transition-all"
+                  style={{ background: "#F8FAFC", border: "1.5px solid rgba(59,130,246,0.15)", color: "#0F1F3D" }}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "#60A5FA")}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.15)")}
+                  onKeyDown={(e) => e.key === 'Enter' && findPatient()}
+                />
+                <button
+                  onClick={findPatient}
+                  disabled={loading}
+                  className="px-3 rounded-xl flex items-center justify-center transition-all bg-blue-600 hover:bg-blue-700 text-white"
+                  style={{
+                    boxShadow: "0 2px 8px rgba(37,99,235,0.35)",
+                  }}
+                >
+                  <Search size={14} />
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="block text-[12px] font-medium mb-1" style={{ color: "#5B7394" }}>Encounter Type</label>
               <input
                 type="text"
-                value={patientSearch}
-                onChange={(e) => setPatientSearch(e.target.value)}
-                placeholder="Name or ID"
-                className="flex-1 rounded-xl px-3 py-[9px] text-[13.5px] outline-none transition-all"
+                value={encounterType}
+                onChange={(e) => setEncounterType(e.target.value)}
+                placeholder="OPD / Follow-up"
+                className="w-full rounded-xl px-3 py-[9px] text-[13.5px] outline-none transition-all"
                 style={{ background: "#F8FAFC", border: "1.5px solid rgba(59,130,246,0.15)", color: "#0F1F3D" }}
                 onFocus={(e) => (e.currentTarget.style.borderColor = "#60A5FA")}
                 onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.15)")}
-                onKeyDown={(e) => e.key === 'Enter' && findPatient()}
               />
-              <button
-                onClick={findPatient}
-                disabled={loading}
-                className="px-3 rounded-xl flex items-center justify-center transition-all bg-blue-600 hover:bg-blue-700 text-white"
-                style={{
-                  boxShadow: "0 2px 8px rgba(37,99,235,0.35)",
-                }}
-              >
-                <Search size={14} />
-              </button>
+            </div>
+            <div>
+              <label className="block text-[12px] font-medium mb-1" style={{ color: "#5B7394" }}>Chief Complaint</label>
+              <input
+                type="text"
+                value={chiefComplaint}
+                onChange={(e) => setChiefComplaint(e.target.value)}
+                placeholder="Main symptom"
+                className="w-full rounded-xl px-3 py-[9px] text-[13.5px] outline-none transition-all"
+                style={{ background: "#F8FAFC", border: "1.5px solid rgba(59,130,246,0.15)", color: "#0F1F3D" }}
+                onFocus={(e) => (e.currentTarget.style.borderColor = "#60A5FA")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.15)")}
+              />
             </div>
           </div>
-          <div>
-            <label className="block text-[12px] font-medium mb-1" style={{ color: "#5B7394" }}>Encounter Type</label>
-            <input
-              type="text"
-              value={encounterType}
-              onChange={(e) => setEncounterType(e.target.value)}
-              placeholder="OPD / Follow-up"
-              className="w-full rounded-xl px-3 py-[9px] text-[13.5px] outline-none transition-all"
-              style={{ background: "#F8FAFC", border: "1.5px solid rgba(59,130,246,0.15)", color: "#0F1F3D" }}
-              onFocus={(e) => (e.currentTarget.style.borderColor = "#60A5FA")}
-              onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.15)")}
-            />
-          </div>
-          <div>
-            <label className="block text-[12px] font-medium mb-1" style={{ color: "#5B7394" }}>Chief Complaint</label>
-            <input
-              type="text"
-              value={chiefComplaint}
-              onChange={(e) => setChiefComplaint(e.target.value)}
-              placeholder="Main symptom"
-              className="w-full rounded-xl px-3 py-[9px] text-[13.5px] outline-none transition-all"
-              style={{ background: "#F8FAFC", border: "1.5px solid rgba(59,130,246,0.15)", color: "#0F1F3D" }}
-              onFocus={(e) => (e.currentTarget.style.borderColor = "#60A5FA")}
-              onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.15)")}
-            />
-          </div>
-        </div>
-        {sessionId && (
-          <p className="text-[12px] mt-2" style={{ color: "#2563EB" }}>
-            Active session: {sessionId}
-          </p>
-        )}
-        {fetchedPatient && (
-          <div className="mt-4 p-4 rounded-xl flex items-center justify-between" style={{ background: "#F0F9FF", border: "1px solid #BAE6FD" }}>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                <User size={18} className="text-blue-600" />
-              </div>
-              <div>
-                <p className="text-[14px] font-semibold text-slate-800">{fetchedPatient.fullName}</p>
-                <div className="flex items-center gap-2 text-[12px] text-slate-500 mt-0.5">
-                  <span className="font-medium bg-blue-100/50 text-blue-700 px-1.5 py-0.5 rounded">{fetchedPatient.patientGlobalId}</span>
-                  {fetchedPatient.age && <span>• {fetchedPatient.age} yrs</span>}
-                  {fetchedPatient.sex && <span className="capitalize">• {fetchedPatient.sex}</span>}
-                  {fetchedPatient.phone && <span>• {fetchedPatient.phone}</span>}
+          {fetchedPatient && (
+            <div className="mt-4 p-4 rounded-xl flex items-center justify-between" style={{ background: "#F0F9FF", border: "1px solid #BAE6FD" }}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                  <User size={18} className="text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-[14px] font-semibold text-slate-800">{fetchedPatient.fullName}</p>
+                  <div className="flex items-center gap-2 text-[12px] text-slate-500 mt-0.5">
+                    <span className="font-medium bg-blue-100/50 text-blue-700 px-1.5 py-0.5 rounded">{fetchedPatient.patientGlobalId}</span>
+                    {fetchedPatient.age && <span>• {fetchedPatient.age} yrs</span>}
+                    {fetchedPatient.sex && <span className="capitalize">• {fetchedPatient.sex}</span>}
+                    {fetchedPatient.phone && <span>• {fetchedPatient.phone}</span>}
+                  </div>
                 </div>
               </div>
             </div>
+          )}
+          {error && (
+            <p className="text-[12px] mt-2" style={{ color: "#DC2626" }}>{error}</p>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-4">
+          <div
+            className="rounded-2xl p-5"
+            style={{ background: "#FFFFFF", border: "1px solid rgba(59,130,246,0.09)", boxShadow: "0 2px 12px rgba(59,130,246,0.06)" }}
+          >
+            <h3 className="text-[13px] font-semibold mb-3" style={{ color: "#0F1F3D" }}>Consultation Flow</h3>
+            <div className="flex flex-col gap-2">
+              {steps.map((step, index) => (
+                <div key={step.label} className="flex items-center justify-between rounded-xl px-3 py-2" style={{ background: "#F8FAFC", border: "1px solid rgba(59,130,246,0.08)" }}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-semibold" style={{ color: "#94A3B8" }}>{index + 1}</span>
+                    <span className="text-[12px]" style={{ color: "#334155" }}>{step.label}</span>
+                  </div>
+                  <span
+                    className="text-[10px] font-semibold uppercase tracking-[0.08em]"
+                    style={{ color: step.done ? "#059669" : "#94A3B8" }}
+                  >
+                    {step.done ? "Done" : "Pending"}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
-        )}
-        {error && (
-          <p className="text-[12px] mt-2" style={{ color: "#DC2626" }}>{error}</p>
-        )}
+
+          <div
+            className="rounded-2xl p-5"
+            style={{ background: "#FFFFFF", border: "1px solid rgba(59,130,246,0.09)", boxShadow: "0 2px 12px rgba(59,130,246,0.06)" }}
+          >
+            <h3 className="text-[13px] font-semibold mb-3" style={{ color: "#0F1F3D" }}>Session Snapshot</h3>
+            <div className="flex flex-col gap-2 text-[12px]" style={{ color: "#5B7394" }}>
+              <div className="flex items-center justify-between">
+                <span>Session ID</span>
+                <span style={{ color: sessionId ? "#0F1F3D" : "#94A3B8" }}>{sessionId || "Not started"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Recording</span>
+                <span style={{ color: recording ? "#EF4444" : "#94A3B8" }}>{recording ? (paused ? "Paused" : "Live") : "Idle"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Elapsed</span>
+                <span style={{ color: "#0F1F3D" }}>{mins}:{secs}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Audio Upload</span>
+                <span style={{ color: hasUploaded ? "#059669" : "#94A3B8" }}>{hasUploaded ? "Uploaded" : "Pending"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Transcript Save</span>
+                <span style={{ color: transcriptSaved ? "#059669" : "#94A3B8" }}>{transcriptSaved ? "Saved" : "Not saved"}</span>
+              </div>
+            </div>
+            <div className="mt-3 text-[11px]" style={{ color: "#94A3B8" }}>
+              Use “Stop & Transcribe” after recording, then “Generate Transcription” to save.
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Recording + AI panel */}
@@ -579,14 +686,19 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
           </div>
           <button
             onClick={generateTranscription}
+            disabled={loading || !sessionId || !hasUploaded || transcript.length === 0}
             className="w-full py-[10px] rounded-xl text-[13.5px] font-semibold flex items-center justify-center gap-2 transition-all"
             style={{
               background: "linear-gradient(135deg, #2563EB, #6366F1)",
-              color: "white", boxShadow: "0 4px 14px rgba(37,99,235,0.35)"
+              color: "white", boxShadow: "0 4px 14px rgba(37,99,235,0.35)",
+              opacity: loading || !sessionId || !hasUploaded || transcript.length === 0 ? 0.6 : 1
             }}
           >
             <FileText size={15} />Generate Transcription
           </button>
+          <div className="mt-2 text-[11px] text-center" style={{ color: "#94A3B8" }}>
+            {transcriptSaved ? "Transcript saved to database." : "Save transcript after audio is uploaded."}
+          </div>
         </div>
       </div>
 

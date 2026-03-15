@@ -6,3 +6,4 @@ torch
 torchaudio
 python-dotenv
 openai-whisper
+httpx
