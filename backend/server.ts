@@ -4,6 +4,7 @@ import http from "http";
 import dotenv from "dotenv";
 import cors from "cors";
 import { Server, Socket } from "socket.io";
+import connectDB from "./config/database.js";
 // import connectDB from "./config/database.js";
 // import { errorHandler, notFound } from "./middleware/error.middleware.js";
 // import userRoutes from "./routes/user.routes.js";
@@ -12,7 +13,7 @@ import { Server, Socket } from "socket.io";
 
 dotenv.config();
 
-// connectDB();
+connectDB();
 
 const app: Application = express();
 
