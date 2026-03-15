@@ -94,18 +94,20 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
 
     setError("");
     setLoading(true);
-    let createdSessionId: string;
+    let activeSessionId: string | null = sessionId;
     try {
-      const session = await api.createSession({
-        patientId: fetchedPatient._id,
-        encounterType: encounterType.trim() || "OPD",
-        chiefComplaint: chiefComplaint.trim() || undefined,
-      });
-      setSessionId(session._id);
-      await api.startSessionRecording(session._id);
-      createdSessionId = session._id;
+      if (!activeSessionId) {
+        const session = await api.createSession({
+          patientId: fetchedPatient._id,
+          encounterType: encounterType.trim() || "OPD",
+          chiefComplaint: chiefComplaint.trim() || undefined,
+        });
+        setSessionId(session._id);
+        activeSessionId = session._id;
+      }
+      await api.startSessionRecording(activeSessionId);
       if (import.meta.env.DEV) {
-        console.log("[consultation] session started", { sessionId: session._id });
+        console.log("[consultation] session started", { sessionId: activeSessionId });
       }
     } catch (apiError) {
       setLoading(false);
@@ -141,11 +143,13 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
 
       setRecording(true);
       setPaused(false);
-      setElapsed(0);
-      setTranscript([]);
-      setAiData({});
-      setHasUploaded(false);
-      setTranscriptSaved(false);
+      if (!sessionId) {
+        setElapsed(0);
+        setTranscript([]);
+        setAiData({});
+        setHasUploaded(false);
+        setTranscriptSaved(false);
+      }
       timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
       setLoading(false);
     } catch (mediaError) {
@@ -238,14 +242,14 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
       setTranscriptSaved(false);
 
       if (uploadResponse.analysis) {
-        setAiData({
-          complaint: uploadResponse.analysis.complaint || "",
-          symptoms: uploadResponse.analysis.symptoms || "",
-          history: uploadResponse.analysis.history || "",
-          diagnosis: uploadResponse.analysis.diagnosis || "",
-          rx: uploadResponse.analysis.rx || "",
-          followup: uploadResponse.analysis.followup || "",
-        });
+        setAiData((prev) => ({
+          complaint: uploadResponse.analysis.complaint || prev.complaint || "",
+          symptoms: uploadResponse.analysis.symptoms || prev.symptoms || "",
+          history: uploadResponse.analysis.history || prev.history || "",
+          diagnosis: uploadResponse.analysis.diagnosis || prev.diagnosis || "",
+          rx: uploadResponse.analysis.rx || prev.rx || "",
+          followup: uploadResponse.analysis.followup || prev.followup || "",
+        }));
       }
 
       if (uploadResponse.segments?.length) {
@@ -256,7 +260,7 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
             speaker: segment.speakerRole === "DOCTOR" ? "Doctor" : segment.speakerRole === "PATIENT" ? "Patient" : "Other",
             text: segment.text,
           }));
-        setTranscript(lines);
+        setTranscript((prev) => (prev.length ? [...prev, ...lines] : lines));
       }
 
       setRecording(false);
@@ -273,53 +277,50 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
     }
   }
 
-  async function generateTranscription() {
+  async function generatePrescriptionAndNotes() {
     if (!sessionId) {
-      setError("Start consultation first to save transcript");
+      setError("Start consultation first to generate prescription");
       return;
     }
     if (!hasUploaded) {
       setError("Stop & Transcribe first to upload audio");
       return;
     }
-    if (!transcript.length) {
-      setError("No transcript available to save yet");
-      return;
-    }
 
     setLoading(true);
     setError("");
     try {
-      try {
-        await api.replaceTranscriptSegments(
-          sessionId,
-          transcript.map((line) => ({
-            text: line.text,
-            speakerRole: line.speaker === "Doctor" ? "DOCTOR" : line.speaker === "Patient" ? "PATIENT" : "UNKNOWN",
-            speakerLabel: line.speaker,
-          }))
-        );
-        setTranscriptSaved(true);
-        return;
-      } catch (replaceError) {
-        const message =
-          replaceError instanceof Error ? replaceError.message : "Unable to save transcript";
-        if (!message.includes("404") && !message.includes("Not found")) {
-          throw replaceError;
-        }
-      }
+      await api.generateNoteDraft({
+        sessionId,
+        chiefComplaint: aiData.complaint || chiefComplaint,
+        medicalHistory: aiData.history,
+        examinationFindings: "Recorded from consultation",
+        doctorNotes: aiData.followup,
+        diagnosisSummary: aiData.diagnosis,
+        plan: aiData.rx,
+        followUpInstructions: aiData.followup,
+      });
 
-      for (const line of transcript) {
-        await api.appendTranscriptChunk(sessionId, {
-          text: line.text,
-          speakerRole: line.speaker === "Doctor" ? "DOCTOR" : line.speaker === "Patient" ? "PATIENT" : "UNKNOWN",
-          speakerLabel: line.speaker,
-          source: "MANUAL",
-        });
-      }
-      setTranscriptSaved(true);
+      await api.generatePrescriptionDraft({
+        sessionId,
+        diagnosisText: aiData.diagnosis,
+        advice: aiData.rx || "Follow the prescribed medication and rest",
+        followUp: aiData.followup || "Follow-up as needed",
+        warnings: ["Return immediately if symptoms worsen"],
+        items: [
+          {
+            medicineName: "Paracetamol",
+            strength: "500mg",
+            dose: "1 tablet",
+            frequency: "three times daily",
+            durationDays: 5,
+            beforeAfterFood: "after",
+          },
+        ],
+      });
+      onComplete(sessionId);
     } catch (apiError) {
-      setError(apiError instanceof Error ? apiError.message : "Unable to save transcript");
+      setError(apiError instanceof Error ? apiError.message : "Unable to generate prescription");
     } finally {
       setLoading(false);
     }
@@ -685,19 +686,19 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
             />
           </div>
           <button
-            onClick={generateTranscription}
-            disabled={loading || !sessionId || !hasUploaded || transcript.length === 0}
+            onClick={generatePrescriptionAndNotes}
+            disabled={loading || !sessionId || !hasUploaded}
             className="w-full py-[10px] rounded-xl text-[13.5px] font-semibold flex items-center justify-center gap-2 transition-all"
             style={{
               background: "linear-gradient(135deg, #2563EB, #6366F1)",
               color: "white", boxShadow: "0 4px 14px rgba(37,99,235,0.35)",
-              opacity: loading || !sessionId || !hasUploaded || transcript.length === 0 ? 0.6 : 1
+              opacity: loading || !sessionId || !hasUploaded ? 0.6 : 1
             }}
           >
-            <FileText size={15} />Generate Transcription
+            <FileText size={15} />Generate Prescription
           </button>
           <div className="mt-2 text-[11px] text-center" style={{ color: "#94A3B8" }}>
-            {transcriptSaved ? "Transcript saved to database." : "Save transcript after audio is uploaded."}
+            Generate prescription and medical notes after audio is uploaded.
           </div>
         </div>
       </div>

@@ -3,7 +3,15 @@ import { useEffect, useMemo, useState } from "react";
 import { api, type SessionWorkspace } from "@/lib/api";
 import { Download, RefreshCw, Save, CheckCircle2, CircleAlert } from "lucide-react";
 
-export function SummaryView({ sessionId, onNew }: { sessionId: string | null; onNew: () => void }) {
+export function SummaryView({
+  sessionId,
+  onClearSelection,
+  onSelectFromHistory,
+}: {
+  sessionId: string | null;
+  onClearSelection: () => void;
+  onSelectFromHistory: () => void;
+}) {
   const [workspace, setWorkspace] = useState<SessionWorkspace | null>(null);
   const [sessionLabReports, setSessionLabReports] = useState<Array<{ _id: string; panelName: string; department: string; createdAt: string }>>([]);
   const [loading, setLoading] = useState(false);
@@ -26,6 +34,10 @@ export function SummaryView({ sessionId, onNew }: { sessionId: string | null; on
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleClearSelection = () => {
+    onClearSelection();
   };
 
   useEffect(() => {
@@ -74,10 +86,17 @@ export function SummaryView({ sessionId, onNew }: { sessionId: string | null; on
         className="rounded-2xl p-6"
         style={{ background: "white", border: "1px solid rgba(59,130,246,0.09)", boxShadow: "0 2px 12px rgba(59,130,246,0.06)" }}
       >
-        <h2 className="text-lg font-bold" style={{ color: "#0F1F3D" }}>No Consultation Selected</h2>
+        <h2 className="text-lg font-bold" style={{ color: "#0F1F3D" }}>Select a Session</h2>
         <p className="text-sm mt-1" style={{ color: "#64748B" }}>
-          Start a consultation to generate and review note and prescription summary.
+          Please select a consultation session to view its Medical Notes and Reports.
         </p>
+        <button
+          onClick={onSelectFromHistory}
+          className="mt-4 px-4 py-2 rounded-xl text-[13px] font-semibold"
+          style={{ background: "linear-gradient(135deg, #2563EB, #6366F1)", color: "white" }}
+        >
+          View History
+        </button>
       </div>
     );
   }
@@ -94,18 +113,21 @@ export function SummaryView({ sessionId, onNew }: { sessionId: string | null; on
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => void loadWorkspace()}
+            onClick={handleClearSelection}
             className="flex items-center gap-2 px-3 py-[8px] rounded-xl text-[12px] font-medium"
             style={{ background: "#F8FAFC", color: "#334155", border: "1px solid rgba(59,130,246,0.15)" }}
           >
-            <RefreshCw size={14} /> Refresh
+            <RefreshCw size={14} /> Clear Selection
           </button>
           <button
-            onClick={onNew}
+            onClick={() => {
+              // Placeholder for PDF export endpoint.
+              setError("PDF export template is not yet configured.");
+            }}
             className="flex items-center gap-2 px-3 py-[8px] rounded-xl text-[12px] font-medium"
             style={{ background: "linear-gradient(135deg, #2563EB, #6366F1)", color: "white" }}
           >
-            <Save size={14} /> New Consultation
+            <Save size={14} /> Export PDF
           </button>
         </div>
       </div>
@@ -196,6 +218,18 @@ export function SummaryView({ sessionId, onNew }: { sessionId: string | null; on
                   ))}
                 </ul>
               )}
+            </div>
+
+            <div className="rounded-2xl p-5" style={{ background: "white", border: "1px solid rgba(59,130,246,0.09)" }}>
+              <h3 className="text-[15px] font-semibold mb-3" style={{ color: "#0F1F3D" }}>AI Analysis</h3>
+              <div className="text-[13px]" style={{ color: "#334155", lineHeight: 1.6 }}>
+                <p><strong>Chief Complaint:</strong> {workspace?.note?.chiefComplaint || "-"}</p>
+                <p><strong>Symptoms:</strong> {(workspace?.note?.symptoms || []).join(", ") || "-"}</p>
+                <p><strong>Medical History:</strong> {workspace?.note?.medicalHistory || "-"}</p>
+                <p><strong>Possible Diagnosis:</strong> {workspace?.note?.diagnosisSummary || "-"}</p>
+                <p><strong>Suggested Prescription:</strong> {workspace?.prescription?.advice || "-"}</p>
+                <p><strong>Follow-up:</strong> {workspace?.prescription?.followUp || workspace?.note?.followUpInstructions || "-"}</p>
+              </div>
             </div>
 
             <div className="rounded-2xl p-5" style={{ background: "white", border: "1px solid rgba(59,130,246,0.09)" }}>

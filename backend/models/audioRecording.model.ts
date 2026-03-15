@@ -48,7 +48,6 @@ const audioRecordingSchema = new Schema<IAudioRecording>(
       type: Schema.Types.ObjectId,
       ref: 'ConsultationSession',
       required: true,
-      unique: true, // assuming one primary recording per session
     },
     patientId: {
       type: Schema.Types.ObjectId,
@@ -97,6 +96,7 @@ const audioRecordingSchema = new Schema<IAudioRecording>(
 // Indexes
 audioRecordingSchema.index({ transcriptStatus: 1 });
 audioRecordingSchema.index({ patientId: 1, createdAt: 1 });
+audioRecordingSchema.index({ consultationSessionId: 1, createdAt: 1 });
 
 const AudioRecording = mongoose.model<IAudioRecording, IAudioRecordingModel>(
   'AudioRecording',

@@ -249,8 +249,24 @@ export default function App() {
               }}
             />
           )}
-          {view === "notes"        && <SummaryView sessionId={sessionId} onNew={() => setView("consultation")} />}
-          {view === "history"      && <HistoryView />}
+          {view === "notes"        && (
+            <SummaryView
+              sessionId={sessionId}
+              onClearSelection={() => {
+                setSessionId(null);
+                setView("notes");
+              }}
+              onSelectFromHistory={() => setView("history")}
+            />
+          )}
+          {view === "history"      && (
+            <HistoryView
+              onViewDetails={(id) => {
+                setSessionId(id);
+                setView("notes");
+              }}
+            />
+          )}
           {view === "patients"     && <PatientView />}
           {view === "settings"     && <SettingsView user={user} />}
         </main>

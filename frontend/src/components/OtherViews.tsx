@@ -9,11 +9,14 @@ const formatDate = (value: string) => {
   return dt.toLocaleString();
 };
 
-export function HistoryView() {
+export function HistoryView({ onViewDetails }: { onViewDetails?: (sessionId: string) => void } = {}) {
   const [items, setItems] = useState<Session[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [workspace, setWorkspace] = useState<Awaited<ReturnType<typeof api.getSessionWorkspaceData>> | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
 
   const loadSessions = async (searchValue?: string) => {
     setLoading(true);
@@ -31,6 +34,18 @@ export function HistoryView() {
   useEffect(() => {
     void loadSessions();
   }, []);
+
+  const loadDetails = async (sessionId: string) => {
+    setDetailsLoading(true);
+    try {
+      const data = await api.getSessionWorkspaceData(sessionId);
+      setWorkspace(data);
+    } catch (apiError) {
+      setError(apiError instanceof Error ? apiError.message : "Unable to load session details");
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -66,8 +81,9 @@ export function HistoryView() {
         </div>
       )}
 
-      <div className="rounded-2xl overflow-hidden" style={{ background: "#FFFFFF", border: "1px solid rgba(59,130,246,0.09)", boxShadow: "0 2px 16px rgba(59,130,246,0.06)" }}>
-        <table className="w-full" style={{ borderCollapse: "collapse" }}>
+      <div className="grid gap-4" style={{ gridTemplateColumns: "1.1fr 0.9fr" }}>
+        <div className="rounded-2xl overflow-hidden" style={{ background: "#FFFFFF", border: "1px solid rgba(59,130,246,0.09)", boxShadow: "0 2px 16px rgba(59,130,246,0.06)" }}>
+          <table className="w-full" style={{ borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "rgba(240,245,251,0.8)", borderBottom: "1px solid rgba(59,130,246,0.09)" }}>
               {["Session ID", "Patient", "Status", "Created At"].map((h) => (
@@ -88,7 +104,18 @@ export function HistoryView() {
               items.map((session) => {
                 const patient = typeof session.patientId === "object" ? session.patientId : null;
                 return (
-                  <tr key={session._id} style={{ borderBottom: "1px solid rgba(59,130,246,0.06)" }}>
+                  <tr
+                    key={session._id}
+                    style={{
+                      borderBottom: "1px solid rgba(59,130,246,0.06)",
+                      background: selectedSessionId === session._id ? "#EFF6FF" : "transparent",
+                      cursor: "pointer",
+                    }}
+                    onClick={() => {
+                      setSelectedSessionId(session._id);
+                      void loadDetails(session._id);
+                    }}
+                  >
                     <td className="px-5 py-[13px] text-[12px]" style={{ color: "#1E293B", fontFamily: "JetBrains Mono, monospace" }}>
                       {session._id}
                     </td>
@@ -104,7 +131,51 @@ export function HistoryView() {
               })
             )}
           </tbody>
-        </table>
+          </table>
+        </div>
+
+        <div className="rounded-2xl p-5" style={{ background: "#FFFFFF", border: "1px solid rgba(59,130,246,0.09)", boxShadow: "0 2px 16px rgba(59,130,246,0.06)" }}>
+          <h3 className="text-[14px] font-semibold mb-3" style={{ color: "#0F1F3D" }}>Session Details</h3>
+          {detailsLoading ? (
+            <div className="text-[13px]" style={{ color: "#64748B" }}>Loading details...</div>
+          ) : !workspace ? (
+            <div className="text-[13px]" style={{ color: "#94A3B8" }}>Select a session to view details.</div>
+          ) : (
+            <div className="flex flex-col gap-3 text-[13px]" style={{ color: "#334155" }}>
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.06em]" style={{ color: "#94A3B8" }}>Patient</div>
+                <div>{typeof workspace.session.patientId === "object" ? workspace.session.patientId.fullName : "Unknown"}</div>
+              </div>
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.06em]" style={{ color: "#94A3B8" }}>Chief Complaint</div>
+                <div>{workspace.session.chiefComplaint || "-"}</div>
+              </div>
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.06em]" style={{ color: "#94A3B8" }}>Status</div>
+                <div>{workspace.session.status}</div>
+              </div>
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.06em]" style={{ color: "#94A3B8" }}>Transcript</div>
+                <div className="rounded-xl p-3 mt-1 text-[12px]" style={{ background: "#F8FAFC", border: "1px solid rgba(59,130,246,0.12)", maxHeight: 160, overflow: "auto", fontFamily: "JetBrains Mono, monospace" }}>
+                  {workspace.transcript.length
+                    ? workspace.transcript.map((line) => line.text).join(" ")
+                    : "No transcript available."}
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  if (selectedSessionId) {
+                    onViewDetails?.(selectedSessionId);
+                  }
+                }}
+                className="mt-1 px-4 py-2 rounded-xl text-[12px] font-semibold"
+                style={{ background: "linear-gradient(135deg, #2563EB, #6366F1)", color: "white" }}
+              >
+                View More Detail
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

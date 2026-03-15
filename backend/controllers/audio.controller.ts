@@ -57,13 +57,7 @@ export const uploadSessionAudio = async (req: Request, res: Response) => {
 		const existingRecording = await AudioRecording.findOne({
 			consultationSessionId: session._id,
 			hospitalId: req.user.hospitalId,
-		});
-		if (existingRecording && existingRecording.transcriptStatus !== TranscriptStatus.FAILED) {
-			res.status(409).json({
-				message: 'Audio already uploaded for this session',
-			});
-			return;
-		}
+		}).sort({ createdAt: -1 });
 
 		const fileUrl = `/${req.file.path.replace(/\\/g, '/')}`;
 
@@ -151,12 +145,11 @@ export const uploadSessionAudio = async (req: Request, res: Response) => {
 				}
 
 				if (Array.isArray(data.segments) && data.segments.length > 0) {
-					if (recording?._id) {
-						await TranscriptSegment.deleteMany({
-							consultationSessionId: session._id,
-							audioRecordingId: recording._id,
-						});
-					}
+					const lastSegment = await TranscriptSegment.findOne({
+						consultationSessionId: session._id,
+						hospitalId: req.user.hospitalId,
+					}).sort({ sequenceNumber: -1 });
+					const baseSequence = lastSegment?.sequenceNumber ?? 0;
 
 					const cleanedSegments = data.segments.filter(
 						(seg: any) => typeof seg?.text === 'string' && seg.text.trim().length > 0
@@ -179,7 +172,7 @@ export const uploadSessionAudio = async (req: Request, res: Response) => {
 							hospitalId: req.user!.hospitalId,
 							consultationSessionId: session._id,
 							audioRecordingId: recording ? recording._id : undefined,
-							sequenceNumber: index + 1,
+							sequenceNumber: baseSequence + index + 1,
 							startMs,
 							endMs,
 							text: String(seg.text || '').trim(),
