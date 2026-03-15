@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
+import fs from 'fs/promises';
 import User, { UserRole } from '../models/user.model.js';
 import Hospital from '../models/hospital.model.js';
 import  { generateToken } from '../security/jwt-util.js'; // adjust path
@@ -128,4 +129,78 @@ export const getMe = async (req: Request, res: Response) => {
 export const logout = (req: Request, res: Response) => {
   res.json({ message: 'Logged out successfully' });
   return;
+};
+
+export const enrollVoice = async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ message: 'Not authorized' });
+      return;
+    }
+    if (!req.file) {
+      res.status(400).json({ message: 'Audio file is required' });
+      return;
+    }
+
+    const fileBuffer = await fs.readFile(req.file.path);
+    const blob = new Blob([fileBuffer], { type: req.file.mimetype || 'audio/webm' });
+
+    const formData = new FormData();
+    formData.append('file', blob, req.file.originalname || 'enrollment.webm');
+
+    const AI_URL = process.env.AI_SERVICE_URL || 'http://127.0.0.1:8000';
+    const aiResponse = await fetch(`${AI_URL}/api/ai/enroll-voice`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!aiResponse.ok) {
+      const errText = await aiResponse.text();
+      res.status(aiResponse.status).json({ message: `AI Service Error: ${errText}` });
+      return;
+    }
+
+    const aiData = await aiResponse.json() as { status: string; embedding: number[] };
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      { voiceEmbedding: aiData.embedding },
+      { new: true }
+    ).select('-passwordHash');
+
+    res.json({ 
+      message: 'Voice enrolled successfully', 
+      user: updatedUser 
+    });
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to enroll voice';
+    res.status(500).json({ message });
+    return;
+  }
+};
+
+export const deleteVoice = async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ message: 'Not authorized' });
+      return;
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      { $unset: { voiceEmbedding: 1 } },
+      { new: true }
+    ).select('-passwordHash');
+
+    res.json({ 
+      message: 'Voice mapping deleted successfully', 
+      user: updatedUser 
+    });
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to delete voice mapping';
+    res.status(500).json({ message });
+    return;
+  }
 };

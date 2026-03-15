@@ -41,7 +41,7 @@ async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Pro
   const { method = 'GET', body, headers = {} } = options;
   const includeJson = !(body instanceof FormData);
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
     method,
     headers: includeJson ? buildHeaders(headers, true) : buildHeaders(headers, false),
     body: body === undefined ? undefined : includeJson ? JSON.stringify(body) : body,
@@ -53,6 +53,13 @@ async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Pro
   };
 
   if (!response.ok) {
+    if (import.meta.env.DEV) {
+      console.warn('API error', {
+        url: `${API_BASE_URL}${path}`,
+        status: response.status,
+        message: payload.message,
+      });
+    }
     throw new Error(payload.message || `Request failed (${response.status})`);
   }
 
@@ -70,6 +77,7 @@ export type AuthUser = {
   status?: string;
   emailVerified?: boolean;
   lastLoginAt?: string;
+  voiceEmbedding?: number[];
 };
 
 export type LoginResponse = {
@@ -119,6 +127,22 @@ export type TranscriptSegment = {
   sequenceNumber: number;
   text: string;
   speakerRole?: string;
+};
+
+export type TranscriptSegmentInput = {
+  text: string;
+  speakerRole?: string;
+  speakerLabel?: string;
+  startMs?: number;
+  endMs?: number;
+  confidence?: number;
+  audioRecordingId?: string;
+};
+
+export type UploadSessionAudioResponse = {
+  recording: AudioRecording | null;
+  transcript?: string;
+  segments?: TranscriptSegment[];
 };
 
 export type ConsultationNote = {
@@ -220,6 +244,17 @@ export const api = {
 
   logout: () => apiRequest<{ message: string }>('/api/auth/logout', { method: 'POST' }),
 
+  enrollVoice: (file: File) => {
+    const formData = new FormData();
+    formData.append('audio', file);
+    return apiRequest<{ message: string; user: AuthUser }>('/api/auth/enroll-voice', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  deleteVoice: () => apiRequest<{ message: string; user: AuthUser }>('/api/auth/enroll-voice', { method: 'DELETE' }),
+
   getPatients: (query?: { q?: string; page?: number; limit?: number }) =>
     apiRequest<PaginatedResponse<Patient>>(`/api/patients${toQueryString(query)}`),
 
@@ -264,7 +299,7 @@ export const api = {
   uploadSessionAudio: (sessionId: string, file: File) => {
     const formData = new FormData();
     formData.append('audio', file);
-    return apiRequest<AudioRecording>(`/api/audio/${sessionId}/upload`, {
+    return apiRequest<UploadSessionAudioResponse>(`/api/audio/${sessionId}/upload`, {
       method: 'POST',
       body: formData,
     });
@@ -279,6 +314,12 @@ export const api = {
     apiRequest<TranscriptSegment>(`/api/audio/${sessionId}/transcript-chunks`, {
       method: 'POST',
       body,
+    }),
+
+  replaceTranscriptSegments: (sessionId: string, segments: TranscriptSegmentInput[]) =>
+    apiRequest<{ count: number }>(`/api/audio/${sessionId}/transcript-replace`, {
+      method: 'POST',
+      body: { segments },
     }),
 
   updateTranscriptStatus: (

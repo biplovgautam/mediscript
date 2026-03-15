@@ -29,6 +29,7 @@ export interface IUser extends Document {
   emailVerified: boolean;
   isDeleted: boolean;
   deletedAt?: Date;
+  voiceEmbedding?: number[];
   createdAt: Date;
   updatedAt: Date;
   matchPassword(enteredPassword: string): Promise<boolean>;
@@ -79,6 +80,10 @@ const userSchema = new Schema<IUser>(
       default: false,
     },
     deletedAt: Date,
+    voiceEmbedding: {
+      type: [Number],
+      default: undefined,
+    },
   },
   {
     timestamps: true,

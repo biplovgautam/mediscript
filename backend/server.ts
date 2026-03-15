@@ -76,6 +76,18 @@ app.use('/uploads', express.static('uploads'));
 
 app.set("io", io);
 
+// Basic request logger with duration + request id
+app.use((req: Request, res: Response, next) => {
+  const requestId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  (req as Request & { requestId?: string }).requestId = requestId;
+  const start = process.hrtime.bigint();
+  res.on("finish", () => {
+    const ms = Number(process.hrtime.bigint() - start) / 1e6;
+    console.log(`[${requestId}] ${req.method} ${req.originalUrl} ${res.statusCode} ${ms.toFixed(1)}ms`);
+  });
+  next();
+});
+
 // Simple test route
 app.get('/', (req: Request, res: Response) => {
   res.send("API is running");

@@ -42,7 +42,10 @@ export const createUploader = (options: UploadOptions = {}) => {
             createDirIfNotExists(destination);
             cb(null, destination);
           },
-    filename,
+    filename: (req, file, cb) => {
+      const generatedName = filename(req, file);
+      cb(null, generatedName);
+    },
   });
 
   // Build multer options conditionally

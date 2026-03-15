@@ -3,25 +3,6 @@ import { useState, useEffect, useRef } from "react";
 import { Mic, Square, Pause, Play, FileText, Brain, Search, User } from "lucide-react";
 import { api, type Patient } from "@/lib/api";
 
-const TRANSCRIPT_LINES = [
-  { speaker: "Doctor", text: "Good morning. What brings you in today?" },
-  { speaker: "Patient", text: "I have been having a bad headache for three days. I also feel hot and very tired." },
-  { speaker: "Doctor", text: "I see. Any nausea or vomiting?" },
-  { speaker: "Patient", text: "Some nausea but no vomiting. Also not eating much." },
-  { speaker: "Doctor", text: "Any allergies to medications? Do you take any medicines regularly?" },
-  { speaker: "Patient", text: "No allergies. No regular medicines. I had flu last year." },
-  { speaker: "Doctor", text: "Okay. Let me check your temperature and blood pressure now." },
-];
-
-const AI_UPDATES = [
-  { delay: 3000, field: "complaint", value: "Persistent headache × 3 days with low-grade fever and fatigue." },
-  { delay: 5500, field: "symptoms", value: "Headache · Fever · Fatigue · Nausea · Reduced appetite" },
-  { delay: 9000, field: "history", value: "No known drug allergies. History of seasonal flu. No chronic conditions." },
-  { delay: 12000, field: "diagnosis", value: "Likely viral fever / URTI. Rule out dengue if thrombocytopenia present." },
-  { delay: 13000, field: "rx", value: "Paracetamol 500mg TID × 5d · ORS · Vitamin C 500mg OD" },
-  { delay: 13500, field: "followup", value: "Review in 3 days. CBC if fever persists beyond 72h." },
-];
-
 const NOTE_SECTIONS = [
   { id: "complaint", label: "Chief Complaint", color: "#2563EB" },
   { id: "symptoms", label: "Symptoms", color: "#D97706" },
@@ -45,7 +26,6 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
     rx: true,
     followup: true,
   });
-  const [lineIdx, setLineIdx] = useState(0);
   const [patientSearch, setPatientSearch] = useState("");
   const [fetchedPatient, setFetchedPatient] = useState<Patient | null>(null);
   const [chiefComplaint, setChiefComplaint] = useState("");
@@ -54,15 +34,29 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const lineRef = useRef<NodeJS.Timeout | null>(null);
-  const aiTimers = useRef<NodeJS.Timeout[]>([]);
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
     if (transcriptRef.current) {
       transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
     }
   }, [transcript]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== "inactive") {
+        recorder.stop();
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, []);
 
   async function findPatient() {
     if (!patientSearch.trim()) {
@@ -88,6 +82,9 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
   }
 
   async function startRecording() {
+    if (import.meta.env.DEV) {
+      console.log("[consultation] startRecording clicked");
+    }
     if (!fetchedPatient?._id) {
       setError("Please act on a fetched patient first to start consultation");
       return;
@@ -105,56 +102,100 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
       setSessionId(session._id);
       await api.startSessionRecording(session._id);
       createdSessionId = session._id;
+      if (import.meta.env.DEV) {
+        console.log("[consultation] session started", { sessionId: session._id });
+      }
     } catch (apiError) {
       setLoading(false);
       setError(apiError instanceof Error ? apiError.message : "Unable to start consultation");
       return;
     }
 
-    setRecording(true);
-    setPaused(false);
-    setElapsed(0);
-    setTranscript([]);
-    setAiData({});
-    setLineIdx(0);
-    timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
-    scheduleLines(0, createdSessionId);
-    aiTimers.current = AI_UPDATES.map(u =>
-      setTimeout(() => setAiData(d => ({ ...d, [u.field]: u.value })), u.delay)
-    );
-    setLoading(false);
-  }
-
-  function scheduleLines(idx: number, activeSessionId?: string) {
-    if (idx >= TRANSCRIPT_LINES.length) return;
-    lineRef.current = setTimeout(() => {
-      setTranscript(t => [...t, TRANSCRIPT_LINES[idx]]);
-      const line = TRANSCRIPT_LINES[idx];
-      if (activeSessionId) {
-        void api.appendTranscriptChunk(activeSessionId, {
-          text: line.text,
-          speakerRole: line.speaker === "Doctor" ? "DOCTOR" : "PATIENT",
-          speakerLabel: line.speaker,
-          source: "AI",
-        });
+    try {
+      if (import.meta.env.DEV) {
+        console.log("[consultation] requesting microphone access");
       }
-      setLineIdx(idx + 1);
-      scheduleLines(idx + 1, activeSessionId);
-    }, idx === 0 ? 400 : 2200);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      const preferredMime = "audio/webm;codecs=opus";
+      const options: MediaRecorderOptions =
+        "MediaRecorder" in window && MediaRecorder.isTypeSupported(preferredMime)
+          ? { mimeType: preferredMime }
+          : {};
+      const recorder = new MediaRecorder(stream, options);
+      audioChunksRef.current = [];
+
+      recorder.addEventListener("dataavailable", (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      });
+
+      mediaRecorderRef.current = recorder;
+      recorder.start(1000);
+      if (import.meta.env.DEV) {
+        console.log("[consultation] recorder started");
+      }
+
+      setRecording(true);
+      setPaused(false);
+      setElapsed(0);
+      setTranscript([]);
+      setAiData({});
+      timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
+      setLoading(false);
+    } catch (mediaError) {
+      setLoading(false);
+      if (import.meta.env.DEV) {
+        console.error("[consultation] microphone error", mediaError);
+      }
+      setError(mediaError instanceof Error ? mediaError.message : "Unable to access microphone");
+    }
   }
 
   function togglePause() {
     if (paused) {
       timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "paused") {
+        mediaRecorderRef.current.resume();
+      }
       setPaused(false);
     } else {
       if (timerRef.current) clearInterval(timerRef.current);
-      if (lineRef.current) clearTimeout(lineRef.current);
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+        mediaRecorderRef.current.pause();
+      }
       setPaused(true);
     }
   }
 
+  async function stopAndCollectAudio(): Promise<Blob | null> {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder) return null;
+    if (recorder.state === "inactive") {
+      if (audioChunksRef.current.length === 0) return null;
+      return new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+    }
+
+    return await new Promise((resolve) => {
+      recorder.addEventListener(
+        "stop",
+        () => {
+          const blob = new Blob(audioChunksRef.current, {
+            type: recorder.mimeType || "audio/webm",
+          });
+          resolve(blob);
+        },
+        { once: true }
+      );
+      recorder.stop();
+    });
+  }
+
   async function stopRecording() {
+    if (import.meta.env.DEV) {
+      console.log("[consultation] stopRecording clicked");
+    }
     if (!sessionId) {
       setError("No active consultation session found");
       return;
@@ -163,38 +204,81 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
     setLoading(true);
     setError("");
     if (timerRef.current) clearInterval(timerRef.current);
-    if (lineRef.current) clearTimeout(lineRef.current);
-    aiTimers.current.forEach(t => clearTimeout(t));
     try {
       await api.stopSessionRecording(sessionId);
-      await api.generateNoteDraft({
-        sessionId,
-        chiefComplaint: aiData.complaint || chiefComplaint,
-        medicalHistory: aiData.history,
-        examinationFindings: "Recorded from consultation",
-        doctorNotes: aiData.followup,
+      if (import.meta.env.DEV) {
+        console.log("[consultation] session stopped", { sessionId });
+      }
+
+      const audioBlob = await stopAndCollectAudio();
+      if (!audioBlob || audioBlob.size === 0) {
+        throw new Error("No audio captured. Please try again.");
+      }
+
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+        mediaStreamRef.current = null;
+      }
+
+      const audioFile = new File([audioBlob], `session-${sessionId}.webm`, {
+        type: audioBlob.type || "audio/webm",
       });
-      await api.generatePrescriptionDraft({
-        sessionId,
-        diagnosisText: aiData.diagnosis,
-        advice: "Hydration and rest",
-        followUp: aiData.followup || "Follow-up in 3 days",
-        warnings: ["Return immediately if symptoms worsen"],
-        items: [
-          {
-            medicineName: "Paracetamol",
-            strength: "500mg",
-            dose: "1 tablet",
-            frequency: "three times daily",
-            durationDays: 5,
-            beforeAfterFood: "after",
-          },
-        ],
-      });
+      if (import.meta.env.DEV) {
+        console.log("[consultation] uploading audio", { size: audioFile.size, type: audioFile.type });
+      }
+      const uploadResponse = await api.uploadSessionAudio(sessionId, audioFile);
+      if (import.meta.env.DEV) {
+        console.log("[consultation] upload response", uploadResponse);
+      }
+
+      if (uploadResponse.segments?.length) {
+        const lines = uploadResponse.segments
+          .slice()
+          .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
+          .map((segment) => ({
+            speaker: segment.speakerRole === "DOCTOR" ? "Doctor" : segment.speakerRole === "PATIENT" ? "Patient" : "Other",
+            text: segment.text,
+          }));
+        setTranscript(lines);
+      }
+
       setRecording(false);
-      onComplete(sessionId);
     } catch (apiError) {
-      setError(apiError instanceof Error ? apiError.message : "Unable to generate session outputs");
+      if (import.meta.env.DEV) {
+        console.error("[consultation] stop error", apiError);
+      }
+      setError(apiError instanceof Error ? apiError.message : "Unable to upload audio for transcription");
+    } finally {
+      mediaRecorderRef.current = null;
+      setPaused(false);
+      setRecording(false);
+      setLoading(false);
+    }
+  }
+
+  async function generateTranscription() {
+    if (!sessionId) {
+      setError("Start consultation first to save transcript");
+      return;
+    }
+    if (!transcript.length) {
+      setError("No transcript available to save yet");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    try {
+      await api.replaceTranscriptSegments(
+        sessionId,
+        transcript.map((line) => ({
+          text: line.text,
+          speakerRole: line.speaker === "Doctor" ? "DOCTOR" : line.speaker === "Patient" ? "PATIENT" : "UNKNOWN",
+          speakerLabel: line.speaker,
+        }))
+      );
+    } catch (apiError) {
+      setError(apiError instanceof Error ? apiError.message : "Unable to save transcript");
     } finally {
       setLoading(false);
     }
@@ -384,7 +468,7 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
                     className="flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-medium transition-all"
                     style={{ background: "#EF4444", color: "white", boxShadow: "0 2px 8px rgba(239,68,68,0.3)" }}
                   >
-                    <Square size={14} />{loading ? "Processing..." : "Stop & Generate"}
+                    <Square size={14} />{loading ? "Processing..." : "Stop & Transcribe"}
                   </button>
                 </>
               )}
@@ -494,17 +578,14 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
             />
           </div>
           <button
-            onClick={() => {
-              if (sessionId) onComplete(sessionId);
-              else setError("Start consultation first to generate summary");
-            }}
+            onClick={generateTranscription}
             className="w-full py-[10px] rounded-xl text-[13.5px] font-semibold flex items-center justify-center gap-2 transition-all"
             style={{
               background: "linear-gradient(135deg, #2563EB, #6366F1)",
               color: "white", boxShadow: "0 4px 14px rgba(37,99,235,0.35)"
             }}
           >
-            <FileText size={15} />Generate Summary
+            <FileText size={15} />Generate Transcription
           </button>
         </div>
       </div>

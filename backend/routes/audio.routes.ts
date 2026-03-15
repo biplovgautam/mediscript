@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
 	appendTranscriptChunk,
   getSessionAudio,
+  replaceTranscriptSegments,
   updateTranscriptStatus,
   uploadSessionAudio,
 } from '../controllers/audio.controller.js';
@@ -15,6 +16,7 @@ router.use(protect);
 router.post('/:sessionId/upload', uploadAudio, uploadSessionAudio);
 router.get('/:sessionId', getSessionAudio);
 router.post('/:sessionId/transcript-chunks', appendTranscriptChunk);
+router.post('/:sessionId/transcript-replace', replaceTranscriptSegments);
 router.patch('/:sessionId/transcript-status', updateTranscriptStatus);
 
 export default router;
