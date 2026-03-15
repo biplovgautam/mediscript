@@ -1,87 +1,108 @@
 "use client";
-import { Search, Filter } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Filter, Search } from "lucide-react";
+import { api, type Patient, type Session } from "@/lib/api";
 
-const consultations = [
-  { name: "Ram Bahadur Thapa", id: "OPD-2024-042", date: "Today, 10:45 AM", diagnosis: "Viral fever", duration: "06:32", status: "Complete" },
-  { name: "Sunita Karki", id: "OPD-2024-041", date: "Today, 09:18 AM", diagnosis: "Hypertension", duration: "08:14", status: "Complete" },
-  { name: "Bikash Tamang", id: "OPD-2024-040", date: "Mar 14, 3:22 PM", diagnosis: "Dengue (suspected)", duration: "11:02", status: "Complete" },
-  { name: "Asha Gurung", id: "OPD-2024-039", date: "Mar 14, 11:05 AM", diagnosis: "UTI", duration: "05:48", status: "Complete" },
-  { name: "Prakash Rai", id: "OPD-2024-038", date: "Mar 13, 2:10 PM", diagnosis: "Follow-up", duration: "04:22", status: "Complete" },
-  { name: "Meena Shrestha", id: "OPD-2024-037", date: "Mar 13, 10:30 AM", diagnosis: "Diabetes check", duration: "09:11", status: "Complete" },
-];
-
-const dxColor: Record<string, string> = {
-  "Viral fever": "bg-amber-50 text-amber-700",
-  "Hypertension": "bg-blue-50 text-blue-700",
-  "Dengue (suspected)": "bg-red-50 text-red-600",
-  "UTI": "bg-purple-50 text-purple-700",
-  "Follow-up": "bg-gray-100 text-gray-600",
-  "Diabetes check": "bg-emerald-50 text-emerald-700",
+const formatDate = (value: string) => {
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return value;
+  return dt.toLocaleString();
 };
 
 export function HistoryView() {
+  const [items, setItems] = useState<Session[]>([]);
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadSessions = async (searchValue?: string) => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await api.getSessions({ page: 1, limit: 30, q: searchValue || undefined });
+      setItems(response.items);
+    } catch (apiError) {
+      setError(apiError instanceof Error ? apiError.message : "Unable to fetch sessions");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadSessions();
+  }, []);
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex gap-3 items-center">
         <div className="relative flex-1">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "#94A3B8" }} />
           <input
-            type="text" placeholder="Search patients, diagnoses…"
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                void loadSessions(query.trim());
+              }
+            }}
+            placeholder="Search patient name or id and press Enter"
             className="w-full rounded-xl pl-9 pr-4 py-[9px] text-[13.5px] outline-none"
             style={{ background: "#FFFFFF", border: "1.5px solid rgba(59,130,246,0.15)", color: "#0F1F3D" }}
           />
         </div>
-        {["All dates", "All diagnoses"].map((opt) => (
-          <select key={opt}
-            className="rounded-xl px-3 py-[9px] text-[13px] outline-none"
-            style={{ background: "#FFFFFF", border: "1.5px solid rgba(59,130,246,0.15)", color: "#5B7394", minWidth: 130 }}
-          >
-            <option>{opt}</option>
-          </select>
-        ))}
         <button
+          onClick={() => void loadSessions(query.trim())}
           className="flex items-center gap-2 px-4 py-[9px] rounded-xl text-[13px]"
           style={{ background: "#FFFFFF", border: "1.5px solid rgba(59,130,246,0.15)", color: "#5B7394" }}
         >
-          <Filter size={14} /> Filter
+          <Filter size={14} /> Search
         </button>
       </div>
+
+      {error && (
+        <div className="rounded-xl px-4 py-3 text-sm" style={{ background: "#FEF2F2", color: "#B91C1C", border: "1px solid #FECACA" }}>
+          {error}
+        </div>
+      )}
 
       <div className="rounded-2xl overflow-hidden" style={{ background: "#FFFFFF", border: "1px solid rgba(59,130,246,0.09)", boxShadow: "0 2px 16px rgba(59,130,246,0.06)" }}>
         <table className="w-full" style={{ borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "rgba(240,245,251,0.8)", borderBottom: "1px solid rgba(59,130,246,0.09)" }}>
-              {["Patient", "Date & Time", "Diagnosis", "Duration", "Status", ""].map((h) => (
+              {["Session ID", "Patient", "Status", "Created At"].map((h) => (
                 <th key={h} className="text-left px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.05em]" style={{ color: "#5B7394" }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {consultations.map((c, i) => (
-              <tr
-                key={i}
-                className="cursor-pointer transition-colors"
-                style={{ borderBottom: i < consultations.length - 1 ? "1px solid rgba(59,130,246,0.06)" : "none" }}
-                onMouseEnter={e => (e.currentTarget.style.background = "#F8FAFF")}
-                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-              >
-                <td className="px-5 py-[13px]">
-                  <div className="text-[13.5px] font-semibold" style={{ color: "#0F1F3D" }}>{c.name}</div>
-                  <div className="text-[11px]" style={{ color: "#94A3B8", fontFamily: "JetBrains Mono" }}>{c.id}</div>
-                </td>
-                <td className="px-5 py-[13px] text-[13px]" style={{ color: "#5B7394" }}>{c.date}</td>
-                <td className="px-5 py-[13px]">
-                  <span className={`text-[11.5px] font-semibold px-3 py-[3px] rounded-full ${dxColor[c.diagnosis] ?? "bg-gray-100 text-gray-600"}`}>{c.diagnosis}</span>
-                </td>
-                <td className="px-5 py-[13px] text-[13px]" style={{ color: "#5B7394", fontFamily: "JetBrains Mono" }}>{c.duration}</td>
-                <td className="px-5 py-[13px]">
-                  <span className="text-[11.5px] font-semibold px-3 py-[3px] rounded-full bg-emerald-50 text-emerald-700">{c.status}</span>
-                </td>
-                <td className="px-5 py-[13px]">
-                  <button className="text-[12px] font-medium" style={{ color: "#2563EB" }}>View →</button>
-                </td>
+            {loading ? (
+              <tr>
+                <td className="px-5 py-4 text-[13px]" style={{ color: "#64748B" }} colSpan={4}>Loading sessions...</td>
               </tr>
-            ))}
+            ) : items.length === 0 ? (
+              <tr>
+                <td className="px-5 py-4 text-[13px]" style={{ color: "#94A3B8" }} colSpan={4}>No sessions found.</td>
+              </tr>
+            ) : (
+              items.map((session) => {
+                const patient = typeof session.patientId === "object" ? session.patientId : null;
+                return (
+                  <tr key={session._id} style={{ borderBottom: "1px solid rgba(59,130,246,0.06)" }}>
+                    <td className="px-5 py-[13px] text-[12px]" style={{ color: "#1E293B", fontFamily: "JetBrains Mono, monospace" }}>
+                      {session._id}
+                    </td>
+                    <td className="px-5 py-[13px] text-[13px]" style={{ color: "#0F1F3D" }}>
+                      {patient ? `${patient.fullName} (${patient.patientGlobalId})` : String(session.patientId)}
+                    </td>
+                    <td className="px-5 py-[13px] text-[12px]">
+                      <span className="px-3 py-[4px] rounded-full" style={{ background: "#EFF6FF", color: "#1D4ED8" }}>{session.status}</span>
+                    </td>
+                    <td className="px-5 py-[13px] text-[13px]" style={{ color: "#5B7394" }}>{formatDate(session.createdAt)}</td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>
@@ -90,63 +111,105 @@ export function HistoryView() {
 }
 
 export function PatientView() {
-  const visits = [
-    { date: "Today · 10:45 AM · 06:32", title: "Viral fever — OPD-2024-042", body: "Persistent headache, fever 37.8°C, fatigue. Paracetamol + ORS. Follow-up in 3 days." },
-    { date: "Feb 18 · 11:20 AM · 05:14", title: "Acute tonsillitis — OPD-2024-018", body: "Sore throat, difficulty swallowing, low-grade fever. Prescribed Amoxicillin." },
-    { date: "Jan 05 · 09:45 AM · 04:52", title: "Gastroenteritis — OPD-2024-003", body: "Stomach cramps, loose motions × 3 days. ORS, Zinc, dietary advice." },
-  ];
+  const [items, setItems] = useState<Patient[]>([]);
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadPatients = async (searchValue?: string) => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await api.getPatients({ page: 1, limit: 40, q: searchValue || undefined });
+      setItems(response.items);
+    } catch (apiError) {
+      setError(apiError instanceof Error ? apiError.message : "Unable to fetch patients");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadPatients();
+  }, []);
+
+  const selectedPatient = useMemo(() => items[0] || null, [items]);
+
   return (
     <div className="grid gap-5" style={{ gridTemplateColumns: "290px 1fr" }}>
-      {/* Profile card */}
       <div className="rounded-2xl overflow-hidden" style={{ background: "#FFFFFF", border: "1px solid rgba(59,130,246,0.09)", boxShadow: "0 2px 16px rgba(59,130,246,0.06)" }}>
         <div className="p-6 text-center" style={{ background: "linear-gradient(135deg, #1D4ED8, #4F46E5)" }}>
-          <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold text-white mx-auto mb-3" style={{ background: "rgba(255,255,255,0.2)", border: "3px solid rgba(255,255,255,0.35)" }}>RT</div>
-          <p className="text-white font-bold text-[17px]">Ram Bahadur Thapa</p>
-          <p className="text-[12px] mt-1" style={{ color: "rgba(255,255,255,0.65)" }}>OPD-2024-042</p>
+          <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold text-white mx-auto mb-3" style={{ background: "rgba(255,255,255,0.2)", border: "3px solid rgba(255,255,255,0.35)" }}>
+            {selectedPatient?.fullName?.[0] || "P"}
+          </div>
+          <p className="text-white font-bold text-[17px]">{selectedPatient?.fullName || "No patient selected"}</p>
+          <p className="text-[12px] mt-1" style={{ color: "rgba(255,255,255,0.65)" }}>{selectedPatient?.patientGlobalId || "-"}</p>
         </div>
         <div className="p-5">
-          {[
-            { l: "Age", v: "32 years" }, { l: "Phone", v: "+977 98412-XXXXX" },
-            { l: "Address", v: "Lalitpur, Kathmandu" }, { l: "Blood group", v: "B+" },
-            { l: "Total visits", v: "4 consultations" }, { l: "Last visit", v: "Today" },
-          ].map(({ l, v }) => (
-            <div key={l} className="flex justify-between py-[8px]" style={{ borderBottom: "1px solid rgba(59,130,246,0.07)" }}>
-              <span className="text-[12px]" style={{ color: "#94A3B8" }}>{l}</span>
-              <span className="text-[13px] font-medium" style={{ color: "#0F1F3D" }}>{v}</span>
-            </div>
-          ))}
-          <button
-            className="w-full mt-4 py-[10px] rounded-xl text-[13px] font-semibold"
-            style={{ background: "linear-gradient(135deg, #2563EB, #6366F1)", color: "white", boxShadow: "0 2px 10px rgba(37,99,235,0.3)" }}
-          >
-            Start New Consultation
-          </button>
+          <div className="flex justify-between py-[8px]" style={{ borderBottom: "1px solid rgba(59,130,246,0.07)" }}>
+            <span className="text-[12px]" style={{ color: "#94A3B8" }}>Age</span>
+            <span className="text-[13px] font-medium" style={{ color: "#0F1F3D" }}>{selectedPatient?.age ?? "-"}</span>
+          </div>
+          <div className="flex justify-between py-[8px]" style={{ borderBottom: "1px solid rgba(59,130,246,0.07)" }}>
+            <span className="text-[12px]" style={{ color: "#94A3B8" }}>Sex</span>
+            <span className="text-[13px] font-medium" style={{ color: "#0F1F3D" }}>{selectedPatient?.sex ?? "-"}</span>
+          </div>
+          <div className="flex justify-between py-[8px]" style={{ borderBottom: "1px solid rgba(59,130,246,0.07)" }}>
+            <span className="text-[12px]" style={{ color: "#94A3B8" }}>Phone</span>
+            <span className="text-[13px] font-medium" style={{ color: "#0F1F3D" }}>{selectedPatient?.phone ?? "-"}</span>
+          </div>
         </div>
       </div>
 
-      {/* Timeline */}
-      <div>
-        <h2 className="text-[15px] font-bold mb-5" style={{ color: "#0F1F3D" }}>Consultation Timeline</h2>
-        <div className="flex flex-col">
-          {visits.map((v, i) => (
-            <div key={i} className="flex gap-4 pb-6 relative">
-              {i < visits.length - 1 && (
-                <div className="absolute left-[11px] top-6 bottom-0 w-[1px]" style={{ background: "rgba(59,130,246,0.15)" }} />
+      <div className="flex flex-col gap-3">
+        <div className="relative">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "#94A3B8" }} />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void loadPatients(query.trim());
+            }}
+            placeholder="Search patient by name or global id and press Enter"
+            className="w-full rounded-xl pl-9 pr-4 py-[9px] text-[13.5px] outline-none"
+            style={{ background: "#FFFFFF", border: "1.5px solid rgba(59,130,246,0.15)", color: "#0F1F3D" }}
+          />
+        </div>
+
+        {error && (
+          <div className="rounded-xl px-4 py-3 text-sm" style={{ background: "#FEF2F2", color: "#B91C1C", border: "1px solid #FECACA" }}>
+            {error}
+          </div>
+        )}
+
+        <div className="rounded-2xl overflow-hidden" style={{ background: "#FFFFFF", border: "1px solid rgba(59,130,246,0.09)" }}>
+          <table className="w-full" style={{ borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "rgba(240,245,251,0.8)", borderBottom: "1px solid rgba(59,130,246,0.09)" }}>
+                {["Global ID", "Name", "Sex", "Age", "Phone"].map((h) => (
+                  <th key={h} className="text-left px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.05em]" style={{ color: "#5B7394" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={5} className="px-5 py-4 text-[13px]" style={{ color: "#64748B" }}>Loading patients...</td></tr>
+              ) : items.length === 0 ? (
+                <tr><td colSpan={5} className="px-5 py-4 text-[13px]" style={{ color: "#94A3B8" }}>No patients found.</td></tr>
+              ) : (
+                items.map((patient) => (
+                  <tr key={patient._id} style={{ borderBottom: "1px solid rgba(59,130,246,0.06)" }}>
+                    <td className="px-5 py-[13px] text-[12px]" style={{ color: "#1E293B", fontFamily: "JetBrains Mono, monospace" }}>{patient.patientGlobalId}</td>
+                    <td className="px-5 py-[13px] text-[13px]" style={{ color: "#0F1F3D" }}>{patient.fullName}</td>
+                    <td className="px-5 py-[13px] text-[13px]" style={{ color: "#5B7394" }}>{patient.sex || "-"}</td>
+                    <td className="px-5 py-[13px] text-[13px]" style={{ color: "#5B7394" }}>{patient.age ?? "-"}</td>
+                    <td className="px-5 py-[13px] text-[13px]" style={{ color: "#5B7394" }}>{patient.phone || "-"}</td>
+                  </tr>
+                ))
               )}
-              <div
-                className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-[2px]"
-                style={{ background: "#EFF6FF", border: "2px solid rgba(59,130,246,0.25)" }}
-              >
-                <div className="w-2 h-2 rounded-full" style={{ background: "#2563EB" }} />
-              </div>
-              <div className="flex-1">
-                <p className="text-[11px] mb-1" style={{ color: "#94A3B8" }}>{v.date}</p>
-                <p className="text-[13.5px] font-semibold mb-1" style={{ color: "#0F1F3D" }}>{v.title}</p>
-                <p className="text-[13px] leading-relaxed" style={{ color: "#5B7394" }}>{v.body}</p>
-                <button className="text-[12px] font-medium mt-2" style={{ color: "#2563EB" }}>View note →</button>
-              </div>
-            </div>
-          ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -180,7 +243,6 @@ export function SettingsView() {
       </div>
 
       <div className="flex flex-col gap-4">
-        {/* Profile section */}
         <div className="rounded-2xl p-6" style={{ background: "#FFFFFF", border: "1px solid rgba(59,130,246,0.09)", boxShadow: "0 2px 12px rgba(59,130,246,0.05)" }}>
           <h3 className="text-[15px] font-bold mb-1" style={{ color: "#0F1F3D" }}>Doctor Profile</h3>
           <p className="text-[13px] mb-5" style={{ color: "#94A3B8" }}>Your information appears on all generated notes and PDF exports.</p>
@@ -204,7 +266,6 @@ export function SettingsView() {
           </button>
         </div>
 
-        {/* AI settings */}
         <div className="rounded-2xl p-6" style={{ background: "#FFFFFF", border: "1px solid rgba(59,130,246,0.09)", boxShadow: "0 2px 12px rgba(59,130,246,0.05)" }}>
           <h3 className="text-[15px] font-bold mb-1" style={{ color: "#0F1F3D" }}>AI Settings</h3>
           <p className="text-[13px] mb-5" style={{ color: "#94A3B8" }}>Control how AI processes and generates your consultation notes.</p>

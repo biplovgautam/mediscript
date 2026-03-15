@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { Mic, Square, Pause, Play, FileText, Brain } from "lucide-react";
+import { api } from "@/lib/api";
 
 const TRANSCRIPT_LINES = [
   { speaker: "Doctor", text: "Good morning. What brings you in today?" },
@@ -30,13 +31,19 @@ const NOTE_SECTIONS = [
   { id: "followup", label: "Follow-up", color: "#0891B2" },
 ];
 
-export function ConsultationView({ onComplete }: { onComplete: () => void }) {
+export function ConsultationView({ onComplete }: { onComplete: (sessionId: string) => void }) {
   const [recording, setRecording] = useState(false);
   const [paused, setPaused] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [transcript, setTranscript] = useState<{ speaker: string; text: string }[]>([]);
   const [aiData, setAiData] = useState<Record<string, string>>({});
   const [lineIdx, setLineIdx] = useState(0);
+  const [patientObjectId, setPatientObjectId] = useState("");
+  const [chiefComplaint, setChiefComplaint] = useState("");
+  const [encounterType, setEncounterType] = useState("OPD");
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const lineRef = useRef<NodeJS.Timeout | null>(null);
   const aiTimers = useRef<NodeJS.Timeout[]>([]);
@@ -48,7 +55,30 @@ export function ConsultationView({ onComplete }: { onComplete: () => void }) {
     }
   }, [transcript]);
 
-  function startRecording() {
+  async function startRecording() {
+    if (!patientObjectId.trim()) {
+      setError("Patient ObjectId is required to start consultation");
+      return;
+    }
+
+    setError("");
+    setLoading(true);
+    let createdSessionId: string;
+    try {
+      const session = await api.createSession({
+        patientId: patientObjectId.trim(),
+        encounterType: encounterType.trim() || "OPD",
+        chiefComplaint: chiefComplaint.trim() || undefined,
+      });
+      setSessionId(session._id);
+      await api.startSessionRecording(session._id);
+      createdSessionId = session._id;
+    } catch (apiError) {
+      setLoading(false);
+      setError(apiError instanceof Error ? apiError.message : "Unable to start consultation");
+      return;
+    }
+
     setRecording(true);
     setPaused(false);
     setElapsed(0);
@@ -56,18 +86,28 @@ export function ConsultationView({ onComplete }: { onComplete: () => void }) {
     setAiData({});
     setLineIdx(0);
     timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
-    scheduleLines(0);
+    scheduleLines(0, createdSessionId);
     aiTimers.current = AI_UPDATES.map(u =>
       setTimeout(() => setAiData(d => ({ ...d, [u.field]: u.value })), u.delay)
     );
+    setLoading(false);
   }
 
-  function scheduleLines(idx: number) {
+  function scheduleLines(idx: number, activeSessionId?: string) {
     if (idx >= TRANSCRIPT_LINES.length) return;
     lineRef.current = setTimeout(() => {
       setTranscript(t => [...t, TRANSCRIPT_LINES[idx]]);
+      const line = TRANSCRIPT_LINES[idx];
+      if (activeSessionId) {
+        void api.appendTranscriptChunk(activeSessionId, {
+          text: line.text,
+          speakerRole: line.speaker === "Doctor" ? "DOCTOR" : "PATIENT",
+          speakerLabel: line.speaker,
+          source: "AI",
+        });
+      }
       setLineIdx(idx + 1);
-      scheduleLines(idx + 1);
+      scheduleLines(idx + 1, activeSessionId);
     }, idx === 0 ? 400 : 2200);
   }
 
@@ -82,12 +122,50 @@ export function ConsultationView({ onComplete }: { onComplete: () => void }) {
     }
   }
 
-  function stopRecording() {
+  async function stopRecording() {
+    if (!sessionId) {
+      setError("No active consultation session found");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
     if (timerRef.current) clearInterval(timerRef.current);
     if (lineRef.current) clearTimeout(lineRef.current);
     aiTimers.current.forEach(t => clearTimeout(t));
-    setRecording(false);
-    onComplete();
+    try {
+      await api.stopSessionRecording(sessionId);
+      await api.generateNoteDraft({
+        sessionId,
+        chiefComplaint: aiData.complaint || chiefComplaint,
+        medicalHistory: aiData.history,
+        examinationFindings: "Recorded from consultation",
+        doctorNotes: aiData.followup,
+      });
+      await api.generatePrescriptionDraft({
+        sessionId,
+        diagnosisText: aiData.diagnosis,
+        advice: "Hydration and rest",
+        followUp: aiData.followup || "Follow-up in 3 days",
+        warnings: ["Return immediately if symptoms worsen"],
+        items: [
+          {
+            medicineName: "Paracetamol",
+            strength: "500mg",
+            dose: "1 tablet",
+            frequency: "three times daily",
+            durationDays: 5,
+            beforeAfterFood: "after",
+          },
+        ],
+      });
+      setRecording(false);
+      onComplete(sessionId);
+    } catch (apiError) {
+      setError(apiError instanceof Error ? apiError.message : "Unable to generate session outputs");
+    } finally {
+      setLoading(false);
+    }
   }
 
   const mins = String(Math.floor(elapsed / 60)).padStart(2, "0");
@@ -107,22 +185,54 @@ export function ConsultationView({ onComplete }: { onComplete: () => void }) {
           Patient Details
         </h2>
         <div className="grid grid-cols-3 gap-4">
-          {[{ label: "Patient Name", placeholder: "Full name" }, { label: "Age", placeholder: "e.g. 34" }, { label: "Patient ID", placeholder: "OPD-2024-…" }].map(f => (
-            <div key={f.label}>
-              <label className="block text-[12px] font-medium mb-1" style={{ color: "#5B7394" }}>{f.label}</label>
-              <input
-                type="text" placeholder={f.placeholder}
-                className="w-full rounded-xl px-3 py-[9px] text-[13.5px] outline-none transition-all"
-                style={{
-                  background: "#F8FAFC", border: "1.5px solid rgba(59,130,246,0.15)",
-                  color: "#0F1F3D",
-                }}
-                onFocus={(e) => (e.currentTarget.style.borderColor = "#60A5FA")}
-                onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.15)")}
-              />
-            </div>
-          ))}
+          <div>
+            <label className="block text-[12px] font-medium mb-1" style={{ color: "#5B7394" }}>Patient ObjectId</label>
+            <input
+              type="text"
+              value={patientObjectId}
+              onChange={(e) => setPatientObjectId(e.target.value)}
+              placeholder="Mongo ObjectId of patient"
+              className="w-full rounded-xl px-3 py-[9px] text-[13.5px] outline-none transition-all"
+              style={{ background: "#F8FAFC", border: "1.5px solid rgba(59,130,246,0.15)", color: "#0F1F3D" }}
+              onFocus={(e) => (e.currentTarget.style.borderColor = "#60A5FA")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.15)")}
+            />
+          </div>
+          <div>
+            <label className="block text-[12px] font-medium mb-1" style={{ color: "#5B7394" }}>Encounter Type</label>
+            <input
+              type="text"
+              value={encounterType}
+              onChange={(e) => setEncounterType(e.target.value)}
+              placeholder="OPD / Follow-up"
+              className="w-full rounded-xl px-3 py-[9px] text-[13.5px] outline-none transition-all"
+              style={{ background: "#F8FAFC", border: "1.5px solid rgba(59,130,246,0.15)", color: "#0F1F3D" }}
+              onFocus={(e) => (e.currentTarget.style.borderColor = "#60A5FA")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.15)")}
+            />
+          </div>
+          <div>
+            <label className="block text-[12px] font-medium mb-1" style={{ color: "#5B7394" }}>Chief Complaint</label>
+            <input
+              type="text"
+              value={chiefComplaint}
+              onChange={(e) => setChiefComplaint(e.target.value)}
+              placeholder="Main symptom"
+              className="w-full rounded-xl px-3 py-[9px] text-[13.5px] outline-none transition-all"
+              style={{ background: "#F8FAFC", border: "1.5px solid rgba(59,130,246,0.15)", color: "#0F1F3D" }}
+              onFocus={(e) => (e.currentTarget.style.borderColor = "#60A5FA")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.15)")}
+            />
+          </div>
         </div>
+        {sessionId && (
+          <p className="text-[12px] mt-2" style={{ color: "#2563EB" }}>
+            Active session: {sessionId}
+          </p>
+        )}
+        {error && (
+          <p className="text-[12px] mt-2" style={{ color: "#DC2626" }}>{error}</p>
+        )}
       </div>
 
       {/* Recording + AI panel */}
@@ -207,20 +317,22 @@ export function ConsultationView({ onComplete }: { onComplete: () => void }) {
                   </button>
                   <button
                     onClick={stopRecording}
+                    disabled={loading}
                     className="flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-medium transition-all"
                     style={{ background: "#EF4444", color: "white", boxShadow: "0 2px 8px rgba(239,68,68,0.3)" }}
                   >
-                    <Square size={14} />Stop &amp; Generate
+                    <Square size={14} />{loading ? "Processing..." : "Stop & Generate"}
                   </button>
                 </>
               )}
               {!recording && (
                 <button
                   onClick={startRecording}
+                  disabled={loading}
                   className="flex items-center gap-2 px-5 py-2 rounded-xl text-[13px] font-medium"
                   style={{ background: "#2563EB", color: "white", boxShadow: "0 2px 8px rgba(37,99,235,0.35)" }}
                 >
-                  <Mic size={14} />Start Consultation
+                  <Mic size={14} />{loading ? "Starting..." : "Start Consultation"}
                 </button>
               )}
             </div>
@@ -300,7 +412,10 @@ export function ConsultationView({ onComplete }: { onComplete: () => void }) {
             />
           </div>
           <button
-            onClick={onComplete}
+            onClick={() => {
+              if (sessionId) onComplete(sessionId);
+              else setError("Start consultation first to generate summary");
+            }}
             className="w-full py-[10px] rounded-xl text-[13.5px] font-semibold flex items-center justify-center gap-2 transition-all"
             style={{
               background: "linear-gradient(135deg, #2563EB, #6366F1)",
