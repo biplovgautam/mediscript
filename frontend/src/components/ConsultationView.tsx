@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { Mic, Square, Pause, Play, FileText, Brain } from "lucide-react";
-import { api } from "@/lib/api";
+import { Mic, Square, Pause, Play, FileText, Brain, Search, User } from "lucide-react";
+import { api, type Patient } from "@/lib/api";
 
 const TRANSCRIPT_LINES = [
   { speaker: "Doctor", text: "Good morning. What brings you in today?" },
@@ -37,8 +37,17 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
   const [elapsed, setElapsed] = useState(0);
   const [transcript, setTranscript] = useState<{ speaker: string; text: string }[]>([]);
   const [aiData, setAiData] = useState<Record<string, string>>({});
+  const [sectionToggles, setSectionToggles] = useState<Record<string, boolean>>({
+    complaint: true,
+    symptoms: true,
+    history: false,
+    diagnosis: true,
+    rx: true,
+    followup: true,
+  });
   const [lineIdx, setLineIdx] = useState(0);
-  const [patientObjectId, setPatientObjectId] = useState("");
+  const [patientSearch, setPatientSearch] = useState("");
+  const [fetchedPatient, setFetchedPatient] = useState<Patient | null>(null);
   const [chiefComplaint, setChiefComplaint] = useState("");
   const [encounterType, setEncounterType] = useState("OPD");
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -55,9 +64,32 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
     }
   }, [transcript]);
 
+  async function findPatient() {
+    if (!patientSearch.trim()) {
+      setError("Please enter a patient ID or name to search");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const res = await api.getPatients({ q: patientSearch.trim() });
+      if (res.items && res.items.length > 0) {
+        setFetchedPatient(res.items[0]);
+      } else {
+        setFetchedPatient(null);
+        setError("Patient not found. Please try another search term.");
+      }
+    } catch (err) {
+      setFetchedPatient(null);
+      setError(err instanceof Error ? err.message : "Error finding patient");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function startRecording() {
-    if (!patientObjectId.trim()) {
-      setError("Patient ObjectId is required to start consultation");
+    if (!fetchedPatient?._id) {
+      setError("Please act on a fetched patient first to start consultation");
       return;
     }
 
@@ -66,7 +98,7 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
     let createdSessionId: string;
     try {
       const session = await api.createSession({
-        patientId: patientObjectId.trim(),
+        patientId: fetchedPatient._id,
         encounterType: encounterType.trim() || "OPD",
         chiefComplaint: chiefComplaint.trim() || undefined,
       });
@@ -186,17 +218,30 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
         </h2>
         <div className="grid grid-cols-3 gap-4">
           <div>
-            <label className="block text-[12px] font-medium mb-1" style={{ color: "#5B7394" }}>Patient ObjectId</label>
-            <input
-              type="text"
-              value={patientObjectId}
-              onChange={(e) => setPatientObjectId(e.target.value)}
-              placeholder="Mongo ObjectId of patient"
-              className="w-full rounded-xl px-3 py-[9px] text-[13.5px] outline-none transition-all"
-              style={{ background: "#F8FAFC", border: "1.5px solid rgba(59,130,246,0.15)", color: "#0F1F3D" }}
-              onFocus={(e) => (e.currentTarget.style.borderColor = "#60A5FA")}
-              onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.15)")}
-            />
+            <label className="block text-[12px] font-medium mb-1" style={{ color: "#5B7394" }}>Find Patient</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={patientSearch}
+                onChange={(e) => setPatientSearch(e.target.value)}
+                placeholder="Name or ID"
+                className="flex-1 rounded-xl px-3 py-[9px] text-[13.5px] outline-none transition-all"
+                style={{ background: "#F8FAFC", border: "1.5px solid rgba(59,130,246,0.15)", color: "#0F1F3D" }}
+                onFocus={(e) => (e.currentTarget.style.borderColor = "#60A5FA")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(59,130,246,0.15)")}
+                onKeyDown={(e) => e.key === 'Enter' && findPatient()}
+              />
+              <button
+                onClick={findPatient}
+                disabled={loading}
+                className="px-3 rounded-xl flex items-center justify-center transition-all bg-blue-600 hover:bg-blue-700 text-white"
+                style={{
+                  boxShadow: "0 2px 8px rgba(37,99,235,0.35)",
+                }}
+              >
+                <Search size={14} />
+              </button>
+            </div>
           </div>
           <div>
             <label className="block text-[12px] font-medium mb-1" style={{ color: "#5B7394" }}>Encounter Type</label>
@@ -229,6 +274,24 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
           <p className="text-[12px] mt-2" style={{ color: "#2563EB" }}>
             Active session: {sessionId}
           </p>
+        )}
+        {fetchedPatient && (
+          <div className="mt-4 p-4 rounded-xl flex items-center justify-between" style={{ background: "#F0F9FF", border: "1px solid #BAE6FD" }}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                <User size={18} className="text-blue-600" />
+              </div>
+              <div>
+                <p className="text-[14px] font-semibold text-slate-800">{fetchedPatient.fullName}</p>
+                <div className="flex items-center gap-2 text-[12px] text-slate-500 mt-0.5">
+                  <span className="font-medium bg-blue-100/50 text-blue-700 px-1.5 py-0.5 rounded">{fetchedPatient.patientGlobalId}</span>
+                  {fetchedPatient.age && <span>• {fetchedPatient.age} yrs</span>}
+                  {fetchedPatient.sex && <span className="capitalize">• {fetchedPatient.sex}</span>}
+                  {fetchedPatient.phone && <span>• {fetchedPatient.phone}</span>}
+                </div>
+              </div>
+            </div>
+          </div>
         )}
         {error && (
           <p className="text-[12px] mt-2" style={{ color: "#DC2626" }}>{error}</p>
@@ -385,15 +448,34 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
             AI Analysis
           </h2>
           {NOTE_SECTIONS.map((s) => (
-            <div key={s.id} className="rounded-xl overflow-hidden" style={{ border: "1px solid rgba(59,130,246,0.1)" }}>
+            <div key={s.id} className={`rounded-xl overflow-hidden transition-all ${!sectionToggles[s.id] ? "opacity-60 grayscale" : ""}`} style={{ border: "1px solid rgba(59,130,246,0.1)" }}>
               <div
-                className="px-3 py-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.06em]"
+                className="px-3 py-2 flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.06em]"
                 style={{ background: "#F8FAFC", borderBottom: "1px solid rgba(59,130,246,0.07)", color: "#5B7394" }}
               >
-                <span className="w-[6px] h-[6px] rounded-full flex-shrink-0" style={{ background: s.color }} />
-                {s.label}
+                <div className="flex items-center gap-2">
+                  <span className="w-[6px] h-[6px] rounded-full flex-shrink-0" style={{ background: s.color }} />
+                  {s.label}
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="sr-only peer"
+                    checked={!!sectionToggles[s.id]}
+                    onChange={(e) => setSectionToggles((prev) => ({ ...prev, [s.id]: e.target.checked }))}
+                  />
+                  <div className={`w-7 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all ${sectionToggles[s.id] ? "bg-blue-600 border-blue-600" : ""}`}></div>
+                </label>
               </div>
-              <div className="px-3 py-[10px] text-[13px]" style={{ color: aiData[s.id] ? "#334155" : "#CBD5E1", fontStyle: aiData[s.id] ? "normal" : "italic", lineHeight: 1.6 }}>
+              <div
+                className="px-3 py-[10px] text-[13px] transition-all"
+                style={{
+                  color: aiData[s.id] ? "#334155" : "#CBD5E1",
+                  fontStyle: aiData[s.id] ? "normal" : "italic",
+                  lineHeight: 1.6,
+                  display: sectionToggles[s.id] ? "block" : "none"
+                }}
+              >
                 {aiData[s.id] || "Listening…"}
               </div>
             </div>
