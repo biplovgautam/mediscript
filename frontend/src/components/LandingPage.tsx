@@ -157,12 +157,7 @@ function HeroMockup() {
         {["#FF5F57","#FEBC2E","#28C840"].map((c) => (
           <span key={c} className="w-3 h-3 rounded-full" style={{ background: c }} />
         ))}
-        <span
-          className="ml-3 text-[11px] flex-1 text-center"
-          style={{ color: "rgba(148,163,184,0.5)", fontFamily: "JetBrains Mono" }}
-        >
-          mediscript.app — consultation
-        </span>
+        <div className="ml-3 flex-1" />
       </div>
 
       <div className="p-5 flex flex-col gap-4">
