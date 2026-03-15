@@ -65,6 +65,11 @@ export type AuthUser = {
   fullName: string;
   email: string;
   role: string;
+  phone?: string;
+  profileImageUrl?: string;
+  status?: string;
+  emailVerified?: boolean;
+  lastLoginAt?: string;
 };
 
 export type LoginResponse = {

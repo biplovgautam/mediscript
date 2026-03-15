@@ -187,6 +187,59 @@ export const updateNote = async (req: Request, res: Response) => {
 	}
 };
 
+export const updateLatestNoteBySession = async (req: Request, res: Response) => {
+	try {
+		if (!req.user) {
+			res.status(401).json({ message: 'Not authorized' });
+			return;
+		}
+
+		const sessionId = requireStringParam(req.params.sessionId);
+		if (!sessionId || !mongoose.Types.ObjectId.isValid(sessionId)) {
+			res.status(400).json({ message: 'Invalid session id' });
+			return;
+		}
+
+		const latestNote = await ConsultationNote.findOne({
+			consultationSessionId: sessionId,
+			hospitalId: req.user.hospitalId,
+		})
+			.sort({ version: -1 })
+			.select('_id');
+
+		if (!latestNote) {
+			res.status(404).json({ message: 'Note not found' });
+			return;
+		}
+
+		const note = await ConsultationNote.findOneAndUpdate(
+			{
+				_id: latestNote._id,
+				hospitalId: req.user.hospitalId,
+			},
+			{
+				...req.body,
+				source: NoteSource.MIXED,
+			},
+			{
+				new: true,
+			}
+		);
+
+		if (!note) {
+			res.status(404).json({ message: 'Note not found' });
+			return;
+		}
+
+		res.json(note);
+		return;
+	} catch (error) {
+		const message = error instanceof Error ? error.message : 'Unable to update note';
+		res.status(500).json({ message });
+		return;
+	}
+};
+
 export const finalizeNote = async (req: Request, res: Response) => {
 	try {
 		if (!req.user) {
@@ -206,19 +259,27 @@ export const finalizeNote = async (req: Request, res: Response) => {
 			doctorId: req.user._id,
 		});
 
-		if (!note) {
-			res.status(404).json({ message: 'Note not found' });
+		const noteToFinalize =
+			note ||
+			(await ConsultationNote.findOne({
+				consultationSessionId: id,
+				hospitalId: req.user.hospitalId,
+				doctorId: req.user._id,
+			}).sort({ version: -1 }));
+
+		if (!noteToFinalize) {
+			res.status(404).json({ message: 'Note not found for the provided noteId/sessionId' });
 			return;
 		}
 
-		note.status = NoteStatus.FINALIZED;
-		note.finalizedAt = new Date();
-		note.finalizedBy = new mongoose.Types.ObjectId(String(req.user._id));
-		await note.save();
+		noteToFinalize.status = NoteStatus.FINALIZED;
+		noteToFinalize.finalizedAt = new Date();
+		noteToFinalize.finalizedBy = new mongoose.Types.ObjectId(String(req.user._id));
+		await noteToFinalize.save();
 
-		const session = await ConsultationSession.findById(note.consultationSessionId);
+		const session = await ConsultationSession.findById(noteToFinalize.consultationSessionId);
 		if (session) {
-			session.currentNoteId = note._id;
+			session.currentNoteId = noteToFinalize._id;
 			session.status = SessionStatus.REVIEWED;
 			await session.save();
 			emitToSessionRoom(req.app, String(session._id), 'session.status.changed', {
@@ -227,14 +288,14 @@ export const finalizeNote = async (req: Request, res: Response) => {
 			});
 		}
 
-		emitToSessionRoom(req.app, String(note.consultationSessionId), 'note.finalized', {
-			sessionId: String(note.consultationSessionId),
-			noteId: String(note._id),
-			status: note.status,
-			finalizedAt: note.finalizedAt,
+		emitToSessionRoom(req.app, String(noteToFinalize.consultationSessionId), 'note.finalized', {
+			sessionId: String(noteToFinalize.consultationSessionId),
+			noteId: String(noteToFinalize._id),
+			status: noteToFinalize.status,
+			finalizedAt: noteToFinalize.finalizedAt,
 		});
 
-		res.json(note);
+		res.json(noteToFinalize);
 		return;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : 'Unable to finalize note';

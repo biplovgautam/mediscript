@@ -2,7 +2,7 @@ import mongoose, { Document, Model, Schema } from 'mongoose';
 import type { IHospital } from './hospital.model.js';
 import type { IPatient } from './patient.model.js';
 import type { IUser } from './user.model.js';
-import type { IPrescription } from './prescription.modle.js';
+import type { IPrescription } from './prescription.model.js';
 import type { IConsultationNote } from './consultationNote.model.js';
 import type { ILabReport } from './labReport.model.js';
 

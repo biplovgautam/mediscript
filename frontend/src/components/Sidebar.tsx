@@ -1,9 +1,9 @@
 "use client";
-import { useState } from "react";
 import {
   LayoutDashboard, Mic, Clock, Users, FileText, Settings,
   Activity, ChevronRight, LogOut
 } from "lucide-react";
+import type { AuthUser } from "@/lib/api";
 
 const navItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, section: "main" },
@@ -17,9 +17,11 @@ const navItems = [
 interface SidebarProps {
   active: string;
   onNav: (id: string) => void;
+  user: AuthUser | null;
+  onLogout: () => void;
 }
 
-export function Sidebar({ active, onNav }: SidebarProps) {
+export function Sidebar({ active, onNav, user, onLogout }: SidebarProps) {
   return (
     <aside
       className="flex flex-col w-[228px] flex-shrink-0 h-screen relative overflow-hidden"
@@ -152,15 +154,19 @@ export function Sidebar({ active, onNav }: SidebarProps) {
             boxShadow: "0 0 10px rgba(99,102,241,0.4)",
           }}
         >
-          DS
+          {user?.fullName
+            ? user.fullName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
+            : "?"}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-white text-[13px] font-medium truncate">Dr. Dipa Sharma</p>
+          <p className="text-white text-[13px] font-medium truncate">{user?.fullName ?? "—"}</p>
           <p className="text-[11px] truncate" style={{ color: "rgba(107,114,128,1)" }}>
-            General Physician
+            {user?.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : ""}
           </p>
         </div>
         <button
+          onClick={onLogout}
+          title="Sign out"
           className="opacity-40 hover:opacity-70 transition-opacity"
           style={{ color: "rgba(148,163,184,1)" }}
         >
