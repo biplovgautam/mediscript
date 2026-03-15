@@ -35,6 +35,9 @@ export default function App() {
   const [email, setEmail] = useState("prashant@gmail.com");
   const [password, setPassword] = useState("hello");
   const meta = topbarMeta[view] ?? topbarMeta.dashboard;
+  const displayTitle = view === "dashboard" && user
+    ? `${GREET}, ${user.fullName} \uD83D\uDC4B`
+    : meta.title;
 
   useEffect(() => {
     setApiToken(token);
@@ -97,6 +100,9 @@ export default function App() {
     setToken(null);
     setUser(null);
     setSessionId(null);
+    setView("dashboard");
+    setRoute("landing");
+    window.history.pushState({}, "", "/");
   };
 
   if (route === "landing") {
@@ -151,7 +157,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "#F0F5FB", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-      <Sidebar active={view} onNav={setView} />
+      <Sidebar active={view} onNav={setView} user={user} onLogout={handleLogout} />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* ── Topbar ── */}
@@ -169,7 +175,7 @@ export default function App() {
               className="text-[15px] font-bold leading-tight truncate"
               style={{ color: "#0F1F3D", letterSpacing: "-0.2px" }}
             >
-              {meta.title}
+              {displayTitle}
             </h1>
             <p className="text-[12px] truncate" style={{ color: "#94A3B8" }}>
               {meta.sub}
@@ -215,7 +221,7 @@ export default function App() {
           {/* Avatar */}
           <button
             title={user.fullName}
-            onClick={handleLogout}
+            onClick={() => setView("settings")}
             className="w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-bold text-white cursor-pointer flex-shrink-0"
             style={{
               background: "linear-gradient(135deg, #2563EB, #6366F1)",
@@ -246,7 +252,7 @@ export default function App() {
           {view === "notes"        && <SummaryView sessionId={sessionId} onNew={() => setView("consultation")} />}
           {view === "history"      && <HistoryView />}
           {view === "patients"     && <PatientView />}
-          {view === "settings"     && <SettingsView />}
+          {view === "settings"     && <SettingsView user={user} />}
         </main>
       </div>
     </div>

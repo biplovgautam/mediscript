@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { Filter, Search } from "lucide-react";
-import { api, type Patient, type Session } from "@/lib/api";
+import { api, type AuthUser, type Patient, type Session } from "@/lib/api";
 
 const formatDate = (value: string) => {
   const dt = new Date(value);
@@ -216,7 +216,7 @@ export function PatientView() {
   );
 }
 
-export function SettingsView() {
+export function SettingsView({ user }: { user: AuthUser }) {
   const toggles = [
     { label: "Auto-generate summary", desc: "Generate notes automatically when recording stops", on: true },
     { label: "Live transcription", desc: "Show real-time text during consultation", on: true },
@@ -247,22 +247,37 @@ export function SettingsView() {
           <h3 className="text-[15px] font-bold mb-1" style={{ color: "#0F1F3D" }}>Doctor Profile</h3>
           <p className="text-[13px] mb-5" style={{ color: "#94A3B8" }}>Your information appears on all generated notes and PDF exports.</p>
           <div className="grid grid-cols-2 gap-4 mb-4">
-            {[{ l: "Full Name", v: "Dr. Dipa Sharma" }, { l: "Specialization", v: "General Physician" }].map(({ l, v }) => (
+            {[
+              { l: "Full Name", v: user.fullName || "-" },
+              { l: "Role", v: user.role || "-" },
+            ].map(({ l, v }) => (
               <div key={l}>
                 <label className="block text-[12px] font-medium mb-1" style={{ color: "#5B7394" }}>{l}</label>
-                <input type="text" defaultValue={v} className="w-full rounded-xl px-3 py-[9px] text-[13.5px] outline-none"
+                <input type="text" value={v} readOnly className="w-full rounded-xl px-3 py-[9px] text-[13.5px] outline-none"
+                  style={{ background: "#F8FAFC", border: "1.5px solid rgba(59,130,246,0.15)", color: "#0F1F3D" }} />
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            {[
+              { l: "Email", v: user.email || "-" },
+              { l: "Phone", v: user.phone || "-" },
+            ].map(({ l, v }) => (
+              <div key={l}>
+                <label className="block text-[12px] font-medium mb-1" style={{ color: "#5B7394" }}>{l}</label>
+                <input type="text" value={v} readOnly className="w-full rounded-xl px-3 py-[9px] text-[13.5px] outline-none"
                   style={{ background: "#F8FAFC", border: "1.5px solid rgba(59,130,246,0.15)", color: "#0F1F3D" }} />
               </div>
             ))}
           </div>
           <div className="mb-4">
-            <label className="block text-[12px] font-medium mb-1" style={{ color: "#5B7394" }}>Hospital / Clinic</label>
-            <input type="text" defaultValue="Kathmandu Community Health Clinic" className="w-full rounded-xl px-3 py-[9px] text-[13.5px] outline-none"
+            <label className="block text-[12px] font-medium mb-1" style={{ color: "#5B7394" }}>Hospital ID</label>
+            <input type="text" value={user.hospitalId || "-"} readOnly className="w-full rounded-xl px-3 py-[9px] text-[13.5px] outline-none"
               style={{ background: "#F8FAFC", border: "1.5px solid rgba(59,130,246,0.15)", color: "#0F1F3D" }} />
           </div>
           <button className="px-4 py-[9px] rounded-xl text-[13px] font-semibold"
             style={{ background: "linear-gradient(135deg, #2563EB, #6366F1)", color: "white", boxShadow: "0 2px 10px rgba(37,99,235,0.3)" }}>
-            Save Changes
+            Synced From Backend
           </button>
         </div>
 

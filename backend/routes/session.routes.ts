@@ -18,7 +18,9 @@ router.get('/', getSessions);
 router.post('/', createSession);
 router.get('/:id/workspace', getSessionWorkspaceData);
 router.post('/:id/start', startSessionRecording);
+router.post('/:id/start-recording', startSessionRecording);
 router.post('/:id/stop', stopSessionRecording);
+router.post('/:id/stop-recording', stopSessionRecording);
 router.patch('/:id/lab-reports', linkLabReportsToSession);
 router.get('/:id', getSessionById);
 

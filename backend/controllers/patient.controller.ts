@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import Patient from '../models/patient.model.js';
 import ConsultationSession from '../models/consultationSession.model.js';
-import Prescription from '../models/prescription.modle.js';
+import Prescription from '../models/prescription.model.js';
 import LabReport from '../models/labReport.model.js';
 
 const parseListParam = (value: unknown): string[] => {

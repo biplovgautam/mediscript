@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import Prescription, {
 	type IMedication,
 	PrescriptionStatus,
-} from '../models/prescription.modle.js';
+} from '../models/prescription.model.js';
 import ConsultationSession, {
 	SessionStatus,
 } from '../models/consultationSession.model.js';
@@ -11,6 +11,21 @@ import { emitToSessionRoom } from '../utils/socket.util.js';
 
 const normalizeItems = (items: unknown): IMedication[] => {
 	if (!Array.isArray(items)) return [];
+
+	const normalizeBeforeAfterFood = (value: unknown): IMedication['beforeAfterFood'] | undefined => {
+		if (typeof value !== 'string') return undefined;
+
+		const normalized = value.trim().toUpperCase().replace(/[-\s]+/g, '_');
+		if (normalized === 'BEFORE') return 'BEFORE_FOOD' as IMedication['beforeAfterFood'];
+		if (normalized === 'AFTER') return 'AFTER_FOOD' as IMedication['beforeAfterFood'];
+		if (normalized === 'WITH') return 'WITH_FOOD' as IMedication['beforeAfterFood'];
+		if (normalized === 'ANY') return 'ANYTIME' as IMedication['beforeAfterFood'];
+
+		const allowed = ['BEFORE_FOOD', 'AFTER_FOOD', 'WITH_FOOD', 'ANYTIME'];
+		return allowed.includes(normalized)
+			? (normalized as IMedication['beforeAfterFood'])
+			: undefined;
+	};
 
 	const normalized: IMedication[] = [];
 
@@ -33,7 +48,10 @@ const normalizeItems = (items: unknown): IMedication[] => {
 		if (data.durationText !== undefined) medication.durationText = data.durationText;
 		if (data.quantity !== undefined) medication.quantity = data.quantity;
 		if (data.instructions !== undefined) medication.instructions = data.instructions;
-		if (data.beforeAfterFood !== undefined) medication.beforeAfterFood = data.beforeAfterFood;
+		if (data.beforeAfterFood !== undefined) {
+			const mealTiming = normalizeBeforeAfterFood(data.beforeAfterFood);
+			if (mealTiming) medication.beforeAfterFood = mealTiming;
+		}
 
 		normalized.push(medication);
 	});
@@ -195,6 +213,69 @@ export const updatePrescription = async (req: Request, res: Response) => {
 	}
 };
 
+export const updateLatestPrescriptionBySession = async (req: Request, res: Response) => {
+	try {
+		if (!req.user) {
+			res.status(401).json({ message: 'Not authorized' });
+			return;
+		}
+
+		const sessionId = requireStringParam(req.params.sessionId);
+		if (!sessionId || !mongoose.Types.ObjectId.isValid(sessionId)) {
+			res.status(400).json({ message: 'Invalid session id' });
+			return;
+		}
+
+		const latestPrescription = await Prescription.findOne({
+			consultationSessionId: sessionId,
+			hospitalId: req.user.hospitalId,
+			doctorId: req.user._id,
+			isDeleted: false,
+		})
+			.sort({ version: -1 })
+			.select('_id');
+
+		if (!latestPrescription) {
+			res.status(404).json({ message: 'Prescription not found' });
+			return;
+		}
+
+		const updatePayload = {
+			...req.body,
+			status: PrescriptionStatus.DOCTOR_EDITED,
+		} as Record<string, unknown>;
+
+		if (req.body.items) {
+			updatePayload.items = normalizeItems(req.body.items);
+		}
+
+		const prescription = await Prescription.findOneAndUpdate(
+			{
+				_id: latestPrescription._id,
+				hospitalId: req.user.hospitalId,
+				doctorId: req.user._id,
+				isDeleted: false,
+			},
+			updatePayload,
+			{
+				new: true,
+			}
+		);
+
+		if (!prescription) {
+			res.status(404).json({ message: 'Prescription not found' });
+			return;
+		}
+
+		res.json(prescription);
+		return;
+	} catch (error) {
+		const message = error instanceof Error ? error.message : 'Unable to update prescription';
+		res.status(500).json({ message });
+		return;
+	}
+};
+
 export const finalizePrescription = async (req: Request, res: Response) => {
 	try {
 		if (!req.user) {
@@ -214,6 +295,63 @@ export const finalizePrescription = async (req: Request, res: Response) => {
 			doctorId: req.user._id,
 			isDeleted: false,
 		});
+
+		if (!prescription) {
+			res.status(404).json({ message: 'Prescription not found' });
+			return;
+		}
+
+		prescription.status = PrescriptionStatus.FINALIZED;
+		prescription.finalizedBy = new mongoose.Types.ObjectId(String(req.user._id));
+		prescription.finalizedAt = new Date();
+		await prescription.save();
+
+		const session = await ConsultationSession.findById(prescription.consultationSessionId);
+		if (session) {
+			session.currentPrescriptionId = prescription._id;
+			session.status = SessionStatus.COMPLETED;
+			await session.save();
+			emitToSessionRoom(req.app, String(session._id), 'session.status.changed', {
+				sessionId: String(session._id),
+				status: session.status,
+			});
+		}
+
+		emitToSessionRoom(req.app, String(prescription.consultationSessionId), 'prescription.finalized', {
+			sessionId: String(prescription.consultationSessionId),
+			prescriptionId: String(prescription._id),
+			status: prescription.status,
+			finalizedAt: prescription.finalizedAt,
+		});
+
+		res.json(prescription);
+		return;
+	} catch (error) {
+		const message = error instanceof Error ? error.message : 'Unable to finalize prescription';
+		res.status(500).json({ message });
+		return;
+	}
+};
+
+export const finalizeLatestPrescriptionBySession = async (req: Request, res: Response) => {
+	try {
+		if (!req.user) {
+			res.status(401).json({ message: 'Not authorized' });
+			return;
+		}
+
+		const sessionId = requireStringParam(req.params.sessionId);
+		if (!sessionId || !mongoose.Types.ObjectId.isValid(sessionId)) {
+			res.status(400).json({ message: 'Invalid session id' });
+			return;
+		}
+
+		const prescription = await Prescription.findOne({
+			consultationSessionId: sessionId,
+			hospitalId: req.user.hospitalId,
+			doctorId: req.user._id,
+			isDeleted: false,
+		}).sort({ version: -1 });
 
 		if (!prescription) {
 			res.status(404).json({ message: 'Prescription not found' });

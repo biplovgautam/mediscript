@@ -6,7 +6,7 @@ import ConsultationSession, {
 	TranscriptionStatus,
 } from '../models/consultationSession.model.js';
 import Patient from '../models/patient.model.js';
-import Prescription from '../models/prescription.modle.js';
+import Prescription from '../models/prescription.model.js';
 import ConsultationNote from '../models/consultationNote.model.js';
 import LabReport from '../models/labReport.model.js';
 import TranscriptSegment from '../models/transcriptSegment.model.js';
