@@ -1,5 +1,4 @@
-import jwt from 'jsonwebtoken'; 
-import type { ObjectId } from 'mongoose';
+import jwt, { type JwtPayload } from 'jsonwebtoken'; 
 
 
 const generateToken = (id: string)=> {
@@ -8,4 +7,8 @@ const generateToken = (id: string)=> {
     })
 }
 
-export {generateToken}; 
+const verifyToken = (token: string): JwtPayload & { id: string } => {
+    return jwt.verify(token, process.env.JWT_SECRET as string) as JwtPayload & { id: string };
+}
+
+export {generateToken, verifyToken}; 

@@ -1,7 +1,6 @@
 import mongoose, { Document, Model, Schema } from 'mongoose';
 import bcrypt from 'bcryptjs';
 import type { IHospital } from './hospital.model.js';
-import type { NextFunction } from 'connect';
 
 export enum UserRole {
   ADMIN = 'ADMIN',
@@ -96,7 +95,7 @@ userSchema.index({ hospitalId: 1, status: 1 });
 
 // Hash password before saving
 userSchema.pre("save", async function () {
-    if (!this.isModified("password") || !this.passwordHash) {
+  if (!this.isModified("passwordHash") || !this.passwordHash) {
         return;
     }
     const salt = await bcrypt.genSalt(10);

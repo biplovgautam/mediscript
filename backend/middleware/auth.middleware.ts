@@ -1,8 +1,7 @@
 import jwt from "jsonwebtoken";
-import type { Jwt } from "jsonwebtoken";
 import asyncHandler from 'express-async-handler'; 
 import User, { type IUser } from '../models/user.model.js'
-import type { Request, Response, NextFunction } from "express";
+import type { NextFunction, Request, RequestHandler, Response } from "express";
 import type { JwtPayload } from "jsonwebtoken";
 
 declare global {
@@ -18,7 +17,7 @@ interface DecodedToken extends JwtPayload {
   [key: string]: unknown;
 }
 
-const protect = asyncHandler(async(req: Request, res: Response, next: NextFunction)=> {
+const protect: RequestHandler = asyncHandler(async(req: Request, res: Response, next: NextFunction)=> {
     let token: string; 
     if(req.headers.authorization && req.headers.authorization.startsWith('Bearer')){
         try {
@@ -28,7 +27,7 @@ const protect = asyncHandler(async(req: Request, res: Response, next: NextFuncti
                 return;
             }
             const decoded= jwt.verify(token, process.env.JWT_SECRET as string ) as DecodedToken; 
-            req.user  = await User.findById(decoded.id).select("-password"); 
+            req.user  = await User.findById(decoded.id).select("-passwordHash"); 
             if(!req.user){
                 res.status(401); 
                 throw new Error("User not found ")

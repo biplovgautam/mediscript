@@ -63,7 +63,7 @@ export const uploadAudio = createUploader({
   destination: "uploads/audio/",
   filename: (req, file) => {
     const ext = path.extname(file.originalname);
-    const sessionId = req.params.id || "unknown";
+    const sessionId = req.params.sessionId || req.params.id || "unknown";
     return `${sessionId}-${Date.now()}${ext}`;
   },
   fileFilter: (req, file, cb) => {
