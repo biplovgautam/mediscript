@@ -14,7 +14,7 @@ load_dotenv()
 device = "mps" if torch.backends.mps.is_available() else "cpu"
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 GROQ_MODEL = os.getenv("GROQ_MODEL", "whisper-large-v3-turbo").strip()
-GROQ_CHAT_MODEL = os.getenv("GROQ_CHAT_MODEL", "llama-3.1-70b-versatile").strip()
+GROQ_CHAT_MODEL = os.getenv("GROQ_CHAT_MODEL", "llama-3.3-70b-versatile").strip()
 GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1").strip()
 
 model = None
@@ -133,6 +133,8 @@ async def transcribe_audio(
                         "  }\n"
                         "}\n\n"
                         "If the conversation does not contain a field, return an empty string for it.\n"
+                        "Use the full transcript to infer the summary fields.\n\n"
+                        f"Full transcript:\n{full_text}\n\n"
                         f"Segments:\n{json.dumps(parsed_segments)}"
                     )
                 }
@@ -198,3 +200,78 @@ async def transcribe_audio(
     finally:
         if os.path.exists(temp_filename):
             os.remove(temp_filename)
+
+
+@router.post("/api/ai/insights")
+async def summarize_transcript(payload: dict):
+    transcript = (payload.get("transcript") or "").strip()
+    if not transcript:
+        raise HTTPException(status_code=400, detail="transcript is required")
+
+    if not GROQ_API_KEY:
+        raise HTTPException(status_code=500, detail="GROQ_API_KEY missing")
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are an expert medical scribe. Summarize the consultation into structured sections.\n"
+                "Rules:\n"
+                "1) Notes: a concise 3-5 sentence summary of the visit.\n"
+                "2) Symptoms: bullet-style list of patient-reported symptoms.\n"
+                "3) On Examination: only findings stated by the clinician; if not present, return empty string.\n"
+                "4) Issues: clinician's assessment/problems.\n"
+                "5) Plan: next steps, investigations, or treatment plan.\n"
+                "6) Advice: patient instructions.\n"
+                "Do not hallucinate. If missing, return empty string."
+            )
+        },
+        {
+            "role": "user",
+            "content": (
+                "Return JSON only in this schema:\n"
+                "{\n"
+                "  \"notes\": string,\n"
+                "  \"symptoms\": string,\n"
+                "  \"examination\": string,\n"
+                "  \"issues\": string,\n"
+                "  \"plan\": string,\n"
+                "  \"advice\": string\n"
+                "}\n\n"
+                f"Transcript:\n{transcript}"
+            )
+        }
+    ]
+
+    url = f"{GROQ_BASE_URL}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": GROQ_CHAT_MODEL,
+        "temperature": 0.2,
+        "messages": messages,
+        "response_format": { "type": "json_object" }
+    }
+    with httpx.Client(timeout=120) as client:
+        resp = client.post(url, headers=headers, json=payload)
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=500, detail=f"Groq insights failed: {resp.text}")
+
+    content = resp.json()["choices"][0]["message"]["content"]
+    try:
+        parsed = json.loads(content)
+    except Exception:
+        # Fallback: try to extract JSON object from text
+        start = content.find("{")
+        end = content.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                parsed = json.loads(content[start:end+1])
+            except Exception:
+                raise HTTPException(status_code=500, detail="Groq insights returned invalid JSON")
+        else:
+            raise HTTPException(status_code=500, detail="Groq insights returned invalid JSON")
+
+    return {"status": "success", "analysis": parsed}

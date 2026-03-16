@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   createSession,
+  deleteSession,
   getSessionById,
   getSessions,
   getSessionWorkspaceData,
@@ -23,5 +24,7 @@ router.post('/:id/stop', stopSessionRecording);
 router.post('/:id/stop-recording', stopSessionRecording);
 router.patch('/:id/lab-reports', linkLabReportsToSession);
 router.get('/:id', getSessionById);
+router.delete('/:id', deleteSession);
+router.post('/:id/delete', deleteSession);
 
 export default router;
