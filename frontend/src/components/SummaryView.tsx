@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { api, type SessionWorkspace } from "@/lib/api";
+import { api, type SessionWorkspace, getPatientLabReports, API_BASE_URL } from "@/lib/api";
 import { Download, RefreshCw, Save, CheckCircle2, CircleAlert, ChevronDown } from "lucide-react";
 
 export function SummaryView({
@@ -13,7 +13,7 @@ export function SummaryView({
   onSelectFromHistory: () => void;
 }) {
   const [workspace, setWorkspace] = useState<SessionWorkspace | null>(null);
-  const [sessionLabReports, setSessionLabReports] = useState<Array<{ _id: string; panelName: string; department: string; createdAt: string }>>([]);
+  const [sessionLabReports, setSessionLabReports] = useState<Array<any>>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -52,12 +52,16 @@ export function SummaryView({
     setLoading(true);
     setError("");
     try {
-      const [data, labReports] = await Promise.all([
-        api.getSessionWorkspaceData(sessionId),
-        api.getLabReportsBySession(sessionId),
-      ]);
+      const data = await api.getSessionWorkspaceData(sessionId);
       setWorkspace(data);
-      setSessionLabReports(labReports);
+      // Fetch lab reports for the patient
+      const patientId = typeof data.session?.patientId === "string" ? data.session.patientId : data.session?.patientId?._id;
+      if (patientId) {
+        const labReports = await getPatientLabReports(patientId);
+        setSessionLabReports(labReports);
+      } else {
+        setSessionLabReports([]);
+      }
     } catch (apiError) {
       setError(apiError instanceof Error ? apiError.message : "Unable to load session summary");
     } finally {
@@ -460,12 +464,18 @@ export function SummaryView({
             <div className="rounded-2xl p-5" style={{ background: "white", border: "1px solid rgba(59,130,246,0.09)" }}>
               <h3 className="text-[15px] font-semibold mb-3" style={{ color: "#0F1F3D" }}>Lab Reports</h3>
               {!sessionLabReports.length ? (
-                <p className="text-[13px]" style={{ color: "#94A3B8" }}>No linked lab reports.</p>
+                <p className="text-[13px]" style={{ color: "#94A3B8" }}>No lab reports found for this patient.</p>
               ) : (
                 <ul className="text-[13px]" style={{ color: "#334155" }}>
                   {sessionLabReports.map((report) => (
                     <li key={report._id} className="py-1">
-                      {report.panelName} ({report.department})
+                      <a href={API_BASE_URL + report.pdfUrl} target="_blank" rel="noopener" style={{ color: "#2563EB", textDecoration: "underline" }}>
+                        {report.panelName} ({report.department})
+                      </a>
+                      <span style={{ color: "#64748B", marginLeft: 8 }}>
+                        {report.collectedAt ? new Date(report.collectedAt).toLocaleString() : ""}
+                      </span>
+                      {report.remarks && <div style={{ color: "#DC2626", fontSize: 12 }}>{report.remarks}</div>}
                     </li>
                   ))}
                 </ul>
