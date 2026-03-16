@@ -223,7 +223,10 @@ async def summarize_transcript(payload: dict):
                 "4) Issues: clinician's assessment/problems.\n"
                 "5) Plan: next steps, investigations, or treatment plan.\n"
                 "6) Advice: patient instructions.\n"
-                "Do not hallucinate. If missing, return empty string."
+                "If Plan or Advice are not explicitly stated, provide a safe, generic clinician plan/advice based on the transcript:\n"
+                "- Plan should mention review of current meds, possible eye exam, and follow-up.\n"
+                "- Advice should mention adherence to prescribed meds, avoid self-adjusting, and return if worsening.\n"
+                "Do not invent specific drugs or dosages."
             )
         },
         {

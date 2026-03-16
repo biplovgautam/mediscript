@@ -181,6 +181,14 @@ export const generateAiDraftFromTranscript = async (req: Request, res: Response)
 
 		const analysis = aiPayload.analysis || {};
 		const symptoms = analysis.symptoms ? splitSymptoms(analysis.symptoms) : [];
+		const safePlan =
+			analysis.plan && String(analysis.plan).trim()
+				? analysis.plan
+				: 'Review current medications, assess adherence, consider ophthalmology review, and schedule follow-up.';
+		const safeAdvice =
+			analysis.advice && String(analysis.advice).trim()
+				? analysis.advice
+				: 'Continue medications as prescribed, avoid self-adjusting treatment, and return if symptoms worsen.';
 
 		const previousNote = await ConsultationNote.findOne({
 			consultationSessionId: session._id,
@@ -199,8 +207,8 @@ export const generateAiDraftFromTranscript = async (req: Request, res: Response)
 			symptoms,
 			examinationFindings: analysis.examination,
 			diagnosisSummary: analysis.issues,
-			plan: analysis.plan,
-			followUpInstructions: analysis.advice,
+			plan: safePlan,
+			followUpInstructions: safeAdvice,
 			doctorNotes: analysis.notes,
 			aiModelName: 'groq-chat',
 			aiConfidence: 0.72,
@@ -225,7 +233,7 @@ export const generateAiDraftFromTranscript = async (req: Request, res: Response)
 			version: (previousPrescription?.version || 0) + 1,
 			status: PrescriptionStatus.AI_DRAFT,
 			diagnosisText: analysis.issues,
-			advice: analysis.advice,
+			advice: safeAdvice,
 			followUp: '',
 			warnings: [],
 			items: [],
