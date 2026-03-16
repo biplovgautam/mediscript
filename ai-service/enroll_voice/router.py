@@ -1,12 +1,22 @@
 from fastapi import APIRouter, File, UploadFile, HTTPException
 import torch
-import torchaudio
 import os
 import shutil
-# Using older SpeechBrain imports since 0.5.16 uses pretrained instead of inference
-from speechbrain.pretrained import EncoderClassifier
 
 router = APIRouter()
+
+SpeechBrainEncoderClassifier = None
+speechbrain_import_error: str | None = None
+
+try:
+    # Newer SpeechBrain versions
+    from speechbrain.inference.speaker import EncoderClassifier as SpeechBrainEncoderClassifier
+except Exception as first_error:
+    try:
+        # Backward compatibility with older SpeechBrain versions
+        from speechbrain.pretrained import EncoderClassifier as SpeechBrainEncoderClassifier
+    except Exception as second_error:
+        speechbrain_import_error = f"{first_error}; fallback failed: {second_error}"
 
 # Hardware Acceleration: Check for Apple's Metal Performance Shaders (mps)
 # Speechbrain needs string device names like "mps" or "cpu"
@@ -14,9 +24,12 @@ device_str = "mps" if torch.backends.mps.is_available() else "cpu"
 
 # Model Loading: Load SpeechBrain's ECAPA-TDNN model (Completely OPEN, No HuggingFace Token Needed)
 try:
+    if SpeechBrainEncoderClassifier is None:
+        raise RuntimeError(speechbrain_import_error or "SpeechBrain import failed")
+
     print("Loading SpeechBrain Encoder...")
-    classifier = EncoderClassifier.from_hparams(
-        source="speechbrain/spkrec-ecapa-voxceleb", 
+    classifier = SpeechBrainEncoderClassifier.from_hparams(
+        source="speechbrain/spkrec-ecapa-voxceleb",
         savedir="pretrained_models/spkrec-ecapa-voxceleb",
         run_opts={"device": device_str}
     )
@@ -28,7 +41,10 @@ except Exception as e:
 @router.post("/api/ai/enroll-voice")
 async def enroll_voice(file: UploadFile = File(...)):
     if classifier is None:
-        raise HTTPException(status_code=500, detail="Model not loaded successfully.")
+        detail = "Model not loaded successfully."
+        if speechbrain_import_error:
+            detail = f"{detail} SpeechBrain import error: {speechbrain_import_error}"
+        raise HTTPException(status_code=500, detail=detail)
 
     temp_filename = f"temp_enrollment_{file.filename}"
     
