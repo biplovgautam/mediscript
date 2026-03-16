@@ -5,6 +5,17 @@ import UploadedDocument, { DocumentType, OcrStatus } from '../models/uploadedDoc
 import ConsultationSession from '../models/consultationSession.model.js';
 import { emitToSessionRoom } from '../utils/socket.util.js';
 
+const parseMultipartJson = <T>(value: unknown): T | undefined => {
+	if (value === undefined || value === null || value === '') return undefined;
+	if (typeof value !== 'string') return value as T;
+
+	try {
+		return JSON.parse(value) as T;
+	} catch {
+		return undefined;
+	}
+};
+
 const normalizeRows = (rows: unknown): ILabResultRow[] => {
 	if (!Array.isArray(rows)) return [];
 
@@ -62,6 +73,7 @@ export const uploadLabReport = async (req: Request, res: Response) => {
 			consultationSessionId,
 			title,
 			panelName,
+			panalName,
 			department,
 			sourceType,
 			reportNumber,
@@ -82,10 +94,18 @@ export const uploadLabReport = async (req: Request, res: Response) => {
 			approvedAt,
 		} = req.body;
 
+		const resolvedPanelName = requireStringParam(panelName) ?? requireStringParam(panalName);
+		const parsedResults = parseMultipartJson<unknown[]>(results) ?? results;
+
 		const sessionId = typeof consultationSessionId === 'string' ? consultationSessionId : undefined;
 
-		if (!panelName || !department) {
+		if (!resolvedPanelName || !department) {
 			res.status(400).json({ message: 'panelName and department are required' });
+			return;
+		}
+
+		if (results !== undefined && !Array.isArray(parsedResults)) {
+			res.status(400).json({ message: 'results must be a valid JSON array' });
 			return;
 		}
 
@@ -116,7 +136,7 @@ export const uploadLabReport = async (req: Request, res: Response) => {
 			createdUploadedDocumentId = doc._id;
 		}
 
-		const normalizedRows = normalizeRows(results);
+		const normalizedRows = normalizeRows(parsedResults);
 
 		const labReportPayload: Record<string, unknown> = {
 			hospitalId: req.user.hospitalId,
@@ -125,7 +145,7 @@ export const uploadLabReport = async (req: Request, res: Response) => {
 			orderNumber,
 			crNumber,
 			opdIpdNumber,
-			panelName,
+			panelName: resolvedPanelName,
 			department,
 			referredDoctorName,
 			corporateName,
