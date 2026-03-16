@@ -1,3 +1,6 @@
+export async function getPatientLabReports(patientId: string) {
+  return await apiRequest(`/api/lab-reports/patient/${patientId}`);
+}
 export const API_BASE_URL =
   ((globalThis as { __MEDISCRIPT_API_BASE_URL__?: string }).__MEDISCRIPT_API_BASE_URL__ || '').trim() ||
   'http://localhost:5000';

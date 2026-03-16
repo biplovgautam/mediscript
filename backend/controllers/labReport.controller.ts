@@ -95,11 +95,12 @@ export const uploadLabReport = async (req: Request, res: Response) => {
 		} = req.body;
 
 		const resolvedPanelName = requireStringParam(panelName) ?? requireStringParam(panalName);
+		const resolvedDepartment = requireStringParam(department);
 		const parsedResults = parseMultipartJson<unknown[]>(results) ?? results;
 
 		const sessionId = typeof consultationSessionId === 'string' ? consultationSessionId : undefined;
 
-		if (!resolvedPanelName || !department) {
+		if (!resolvedPanelName || !resolvedDepartment) {
 			res.status(400).json({ message: 'panelName and department are required' });
 			return;
 		}
@@ -146,7 +147,7 @@ export const uploadLabReport = async (req: Request, res: Response) => {
 			crNumber,
 			opdIpdNumber,
 			panelName: resolvedPanelName,
-			department,
+			department: resolvedDepartment,
 			referredDoctorName,
 			corporateName,
 			orderedAt,
