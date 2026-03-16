@@ -1,5 +1,5 @@
 import multer from "multer";
-import type { Request } from "express";
+import type { NextFunction, Request, Response } from "express";
 import path from "path";
 import type { FileFilterCallback } from "multer";
 import fs from "fs";
@@ -94,6 +94,48 @@ export const uploadLabReport = createUploader({
   limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
   fieldName: "labReport",
 });
+
+const labReportStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const destination = "uploads/lab-reports/";
+    createDirIfNotExists(destination);
+    cb(null, destination);
+  },
+  filename: (req, file, cb) => {
+    cb(null, `${Date.now()}-${file.originalname}`);
+  },
+});
+
+const labReportUpload = multer({
+  storage: labReportStorage,
+  fileFilter: (req, file, cb) => {
+    const allowedMimes = ["application/pdf", "image/jpeg", "image/png"];
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only PDF, JPEG, and PNG files are allowed"));
+    }
+  },
+  limits: { fileSize: 20 * 1024 * 1024 },
+});
+
+export const uploadLabReportFlexible = (req: Request, res: Response, next: NextFunction) => {
+  const handler = labReportUpload.fields([
+    { name: "labReport", maxCount: 1 },
+    { name: "file", maxCount: 1 },
+  ]);
+
+  handler(req, res, (error) => {
+    if (error) {
+      next(error);
+      return;
+    }
+
+    const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+    req.file = files?.labReport?.[0] ?? files?.file?.[0];
+    next();
+  });
+};
 
 // Pre‑configured uploader for patient documents (OPD cards, etc.)
 export const uploadPatientDocument = createUploader({
