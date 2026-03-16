@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OPD Card</title>
+    <style>
+      :root {
+        --ink: #111111;
+        --muted: #555555;
+        --rule: #bdbdbd;
+        --bg: #ffffff;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 24px;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: "Times New Roman", Times, serif;
+        line-height: 1.35;
+      }
+      .sheet {
+        max-width: 840px;
+        margin: 0 auto;
+      }
+      .title {
+        text-align: center;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        margin: 6px 0 12px;
+      }
+      .header {
+        border: 1px solid var(--rule);
+        border-radius: 6px;
+        padding: 10px 12px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        font-size: 13px;
+      }
+      .header .line {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .section {
+        margin-top: 16px;
+      }
+      .section-title {
+        font-weight: 700;
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin: 0 0 6px;
+      }
+      .text-block {
+        font-size: 13px;
+        white-space: pre-wrap;
+      }
+      .list {
+        margin: 0;
+        padding-left: 18px;
+        font-size: 13px;
+      }
+      .footer {
+        margin-top: 18px;
+        border-top: 1px solid var(--rule);
+        padding-top: 8px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      @media print {
+        body { padding: 0; }
+        .sheet { max-width: none; margin: 0; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sheet">
+      <div class="title">OPD CARD</div>
+
+      <div class="header">
+        <div>
+          <div class="line"><strong>CR No.</strong> {{cr_no}} <strong>Name</strong> {{patient_name}}</div>
+          <div class="line"><strong>Age/Gender</strong> {{age_gender}}</div>
+        </div>
+        <div class="line"><strong>Date</strong> {{date}}</div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Notes</div>
+        <div class="text-block">{{notes}}</div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Symptoms</div>
+        <div class="text-block">{{symptoms}}</div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">On Examination</div>
+        <div class="text-block">{{examination}}</div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Issues</div>
+        <ol class="list">
+          {{issues}}
+        </ol>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Plan</div>
+        <ol class="list">
+          {{plan}}
+        </ol>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Advice</div>
+        <ol class="list">
+          {{advice}}
+        </ol>
+      </div>
+
+      <div class="footer">
+        Note: This document is computer generated and does not require a signature.
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { api, type SessionWorkspace } from "@/lib/api";
-import { Download, RefreshCw, Save, CheckCircle2, CircleAlert } from "lucide-react";
+import { Download, RefreshCw, Save, CheckCircle2, CircleAlert, ChevronDown } from "lucide-react";
 
 export function SummaryView({
   sessionId,
@@ -17,6 +17,35 @@ export function SummaryView({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [editingPrescription, setEditingPrescription] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+
+  const handleDownloadPdf = async () => {
+    if (!sessionId) return;
+    const pdf = await api.downloadOpdPdf(sessionId);
+    const url = URL.createObjectURL(pdf);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `opd-card-${sessionId}.pdf`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handlePrintPdf = async () => {
+    if (!sessionId) return;
+    const pdf = await api.downloadOpdPdf(sessionId);
+    const url = URL.createObjectURL(pdf);
+    const printWindow = window.open(url, "_blank");
+    if (!printWindow) return;
+    printWindow.focus();
+  };
+  const [prescriptionDraft, setPrescriptionDraft] = useState({
+    diagnosisText: "",
+    advice: "",
+    followUp: "",
+    warnings: "",
+    items: [{ medicineName: "", strength: "", dose: "", frequency: "" }],
+  });
 
   const loadWorkspace = async () => {
     if (!sessionId) return;
@@ -43,6 +72,25 @@ export function SummaryView({
   useEffect(() => {
     void loadWorkspace();
   }, [sessionId]);
+
+  useEffect(() => {
+    if (!workspace?.prescription) return;
+    setPrescriptionDraft({
+      diagnosisText: workspace.prescription.diagnosisText || "",
+      advice: workspace.prescription.advice || "",
+      followUp: workspace.note?.plan || workspace.prescription.followUp || "",
+      warnings: (workspace.prescription.warnings || []).join("\n"),
+      items: (workspace.prescription.items || []).length
+        ? (workspace.prescription.items || []).map((item) => ({
+            medicineName: item.medicineName || "",
+            strength: item.strength || "",
+            dose: item.dose || "",
+            frequency: item.frequency || "",
+          }))
+        : [{ medicineName: "", strength: "", dose: "", frequency: "" }],
+    });
+    setEditingPrescription(false);
+  }, [workspace?.prescription?._id]);
 
   const transcriptText = useMemo(() => {
     if (!workspace?.transcript?.length) return "";
@@ -75,6 +123,33 @@ export function SummaryView({
       await loadWorkspace();
     } catch (apiError) {
       setError(apiError instanceof Error ? apiError.message : "Unable to finalize prescription");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSavePrescription = async () => {
+    if (!sessionId) return;
+    setSaving(true);
+    setError("");
+    try {
+      await api.updateLatestNoteBySession(sessionId, {
+        plan: prescriptionDraft.followUp,
+      });
+      await api.updateLatestPrescriptionBySession(sessionId, {
+        diagnosisText: prescriptionDraft.diagnosisText,
+        advice: prescriptionDraft.advice,
+        followUp: workspace?.prescription?.followUp,
+        warnings: prescriptionDraft.warnings
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean),
+        items: prescriptionDraft.items.filter((item) => item.medicineName.trim()),
+      });
+      await loadWorkspace();
+      setEditingPrescription(false);
+    } catch (apiError) {
+      setError(apiError instanceof Error ? apiError.message : "Unable to save prescription");
     } finally {
       setSaving(false);
     }
@@ -119,16 +194,50 @@ export function SummaryView({
           >
             <RefreshCw size={14} /> Clear Selection
           </button>
-          <button
-            onClick={() => {
-              // Placeholder for PDF export endpoint.
-              setError("PDF export template is not yet configured.");
-            }}
-            className="flex items-center gap-2 px-3 py-[8px] rounded-xl text-[12px] font-medium"
-            style={{ background: "linear-gradient(135deg, #2563EB, #6366F1)", color: "white" }}
-          >
-            <Save size={14} /> Export PDF
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setExportOpen((prev) => !prev)}
+              className="flex items-center gap-2 px-3 py-[8px] rounded-xl text-[12px] font-medium"
+              style={{ background: "linear-gradient(135deg, #2563EB, #6366F1)", color: "white" }}
+            >
+              <Save size={14} /> Export PDF <ChevronDown size={12} />
+            </button>
+            {exportOpen && (
+              <div
+                className="absolute right-0 mt-2 w-40 rounded-xl overflow-hidden"
+                style={{ background: "white", border: "1px solid rgba(59,130,246,0.12)", boxShadow: "0 8px 20px rgba(15,23,42,0.12)" }}
+              >
+                <button
+                  onClick={async () => {
+                    setExportOpen(false);
+                    try {
+                      await handleDownloadPdf();
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : "Unable to download PDF");
+                    }
+                  }}
+                  className="w-full text-left px-4 py-2 text-[12px] hover:bg-slate-50"
+                  style={{ color: "#0F1F3D" }}
+                >
+                  Download PDF
+                </button>
+                <button
+                  onClick={async () => {
+                    setExportOpen(false);
+                    try {
+                      await handlePrintPdf();
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : "Unable to print PDF");
+                    }
+                  }}
+                  className="w-full text-left px-4 py-2 text-[12px] hover:bg-slate-50"
+                  style={{ color: "#0F1F3D" }}
+                >
+                  Print PDF
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -147,17 +256,19 @@ export function SummaryView({
           <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
             <div className="rounded-2xl p-5" style={{ background: "white", border: "1px solid rgba(59,130,246,0.09)" }}>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[15px] font-semibold" style={{ color: "#0F1F3D" }}>Consultation Note</h3>
+                <h3 className="text-[15px] font-semibold" style={{ color: "#0F1F3D" }}>Consultation Summary</h3>
                 <span className="text-[11px]" style={{ color: "#64748B" }}>
                   {workspace?.note?.status || "Not generated"}
                 </span>
               </div>
               {workspace?.note ? (
                 <div className="text-[13px]" style={{ color: "#334155", lineHeight: 1.6 }}>
-                  <p><strong>Chief Complaint:</strong> {workspace.note.chiefComplaint || "-"}</p>
+                  <p><strong>Notes:</strong> {workspace.note.doctorNotes || "-"}</p>
                   <p><strong>Symptoms:</strong> {(workspace.note.symptoms || []).join(", ") || "-"}</p>
-                  <p><strong>Medical History:</strong> {workspace.note.medicalHistory || "-"}</p>
-                  <p><strong>Diagnosis:</strong> {workspace.note.diagnosisSummary || "-"}</p>
+                  <p><strong>On Examination:</strong> {workspace.note.examinationFindings || "-"}</p>
+                  <p><strong>Issues:</strong> {workspace.note.diagnosisSummary || "-"}</p>
+                  <p><strong>Plan:</strong> {workspace.note.plan || "-"}</p>
+                  <p><strong>Advice:</strong> {workspace.prescription?.advice || "-"}</p>
                 </div>
               ) : (
                 <p className="text-[13px]" style={{ color: "#94A3B8" }}>No note available yet.</p>
@@ -183,10 +294,131 @@ export function SummaryView({
               </div>
               {workspace?.prescription ? (
                 <div className="text-[13px]" style={{ color: "#334155", lineHeight: 1.6 }}>
-                  <p><strong>Diagnosis:</strong> {workspace.prescription.diagnosisText || "-"}</p>
-                  <p><strong>Advice:</strong> {workspace.prescription.advice || "-"}</p>
-                  <p><strong>Follow Up:</strong> {workspace.prescription.followUp || "-"}</p>
-                  <p><strong>Items:</strong> {(workspace.prescription.items || []).length}</p>
+                  {editingPrescription ? (
+                    <div className="flex flex-col gap-3">
+                      <div>
+                        <label className="text-[11px] uppercase tracking-[0.06em]" style={{ color: "#94A3B8" }}>Diagnosis</label>
+                        <input
+                          value={prescriptionDraft.diagnosisText}
+                          onChange={(e) => setPrescriptionDraft((prev) => ({ ...prev, diagnosisText: e.target.value }))}
+                          className="mt-1 w-full rounded-xl px-3 py-2 text-[12px] outline-none"
+                          style={{ background: "#F8FAFC", border: "1px solid rgba(59,130,246,0.15)" }}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] uppercase tracking-[0.06em]" style={{ color: "#94A3B8" }}>Advice</label>
+                        <textarea
+                          value={prescriptionDraft.advice}
+                          onChange={(e) => setPrescriptionDraft((prev) => ({ ...prev, advice: e.target.value }))}
+                          className="mt-1 w-full rounded-xl px-3 py-2 text-[12px] outline-none resize-none"
+                          rows={2}
+                          style={{ background: "#F8FAFC", border: "1px solid rgba(59,130,246,0.15)" }}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] uppercase tracking-[0.06em]" style={{ color: "#94A3B8" }}>Plan</label>
+                        <textarea
+                          value={prescriptionDraft.followUp}
+                          onChange={(e) => setPrescriptionDraft((prev) => ({ ...prev, followUp: e.target.value }))}
+                          className="mt-1 w-full rounded-xl px-3 py-2 text-[12px] outline-none resize-none"
+                          rows={2}
+                          style={{ background: "#F8FAFC", border: "1px solid rgba(59,130,246,0.15)" }}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] uppercase tracking-[0.06em]" style={{ color: "#94A3B8" }}>Warnings</label>
+                        <textarea
+                          value={prescriptionDraft.warnings}
+                          onChange={(e) => setPrescriptionDraft((prev) => ({ ...prev, warnings: e.target.value }))}
+                          className="mt-1 w-full rounded-xl px-3 py-2 text-[12px] outline-none resize-none"
+                          rows={2}
+                          style={{ background: "#F8FAFC", border: "1px solid rgba(59,130,246,0.15)" }}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <label className="text-[11px] uppercase tracking-[0.06em]" style={{ color: "#94A3B8" }}>Medicines</label>
+                        {prescriptionDraft.items.map((item, idx) => (
+                          <div key={idx} className="grid gap-2" style={{ gridTemplateColumns: "1.2fr 1fr 1fr 1fr" }}>
+                            <input
+                              placeholder="Medicine"
+                              value={item.medicineName}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                setPrescriptionDraft((prev) => {
+                                  const next = [...prev.items];
+                                  next[idx] = { ...next[idx], medicineName: value };
+                                  return { ...prev, items: next };
+                                });
+                              }}
+                              className="rounded-lg px-2 py-2 text-[12px] outline-none"
+                              style={{ background: "#F8FAFC", border: "1px solid rgba(59,130,246,0.15)" }}
+                            />
+                            <input
+                              placeholder="Strength"
+                              value={item.strength}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                setPrescriptionDraft((prev) => {
+                                  const next = [...prev.items];
+                                  next[idx] = { ...next[idx], strength: value };
+                                  return { ...prev, items: next };
+                                });
+                              }}
+                              className="rounded-lg px-2 py-2 text-[12px] outline-none"
+                              style={{ background: "#F8FAFC", border: "1px solid rgba(59,130,246,0.15)" }}
+                            />
+                            <input
+                              placeholder="Dose"
+                              value={item.dose}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                setPrescriptionDraft((prev) => {
+                                  const next = [...prev.items];
+                                  next[idx] = { ...next[idx], dose: value };
+                                  return { ...prev, items: next };
+                                });
+                              }}
+                              className="rounded-lg px-2 py-2 text-[12px] outline-none"
+                              style={{ background: "#F8FAFC", border: "1px solid rgba(59,130,246,0.15)" }}
+                            />
+                            <input
+                              placeholder="Frequency"
+                              value={item.frequency}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                setPrescriptionDraft((prev) => {
+                                  const next = [...prev.items];
+                                  next[idx] = { ...next[idx], frequency: value };
+                                  return { ...prev, items: next };
+                                });
+                              }}
+                              className="rounded-lg px-2 py-2 text-[12px] outline-none"
+                              style={{ background: "#F8FAFC", border: "1px solid rgba(59,130,246,0.15)" }}
+                            />
+                          </div>
+                        ))}
+                        <button
+                          onClick={() =>
+                            setPrescriptionDraft((prev) => ({
+                              ...prev,
+                              items: [...prev.items, { medicineName: "", strength: "", dose: "", frequency: "" }],
+                            }))
+                          }
+                          className="self-start px-3 py-1 rounded-lg text-[11px] font-semibold"
+                          style={{ background: "#EFF6FF", color: "#1D4ED8" }}
+                        >
+                          Add medicine
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <p><strong>Diagnosis:</strong> {workspace.prescription.diagnosisText || "-"}</p>
+                      <p><strong>Advice:</strong> {workspace.prescription.advice || "-"}</p>
+                      <p><strong>Follow Up:</strong> {workspace.prescription.followUp || "-"}</p>
+                      <p><strong>Items:</strong> {(workspace.prescription.items || []).length}</p>
+                    </>
+                  )}
                 </div>
               ) : (
                 <p className="text-[13px]" style={{ color: "#94A3B8" }}>No prescription available yet.</p>
@@ -200,6 +432,26 @@ export function SummaryView({
                 >
                   <CheckCircle2 size={14} /> Finalize Prescription
                 </button>
+                {workspace?.prescription && (
+                  editingPrescription ? (
+                    <button
+                      onClick={handleSavePrescription}
+                      disabled={saving}
+                      className="flex items-center gap-2 px-3 py-[8px] rounded-xl text-[12px] font-medium"
+                      style={{ background: "#EFF6FF", color: "#1D4ED8", border: "1px solid rgba(59,130,246,0.2)" }}
+                    >
+                      <Save size={14} /> Save Changes
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setEditingPrescription(true)}
+                      className="flex items-center gap-2 px-3 py-[8px] rounded-xl text-[12px] font-medium"
+                      style={{ background: "#EFF6FF", color: "#1D4ED8", border: "1px solid rgba(59,130,246,0.2)" }}
+                    >
+                      <Save size={14} /> Edit Prescription
+                    </button>
+                  )
+                )}
               </div>
             </div>
           </div>

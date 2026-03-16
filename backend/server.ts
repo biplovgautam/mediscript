@@ -14,6 +14,7 @@ import audioRoutes from './routes/audio.routes.js';
 import noteRoutes from './routes/note.routes.js';
 import prescriptionRoutes from './routes/prescription.routes.js';
 import labReportRoutes from './routes/labReport.routes.js';
+import reportRoutes from './routes/report.routes.js';
 import User from './models/user.model.js';
 import ConsultationSession from './models/consultationSession.model.js';
 import { verifyToken } from './security/jwt-util.js';
@@ -101,6 +102,7 @@ app.use('/api/audio', audioRoutes);
 app.use('/api/notes', noteRoutes);
 app.use('/api/prescriptions', prescriptionRoutes);
 app.use('/api/lab-reports', labReportRoutes);
+app.use('/api/reports', reportRoutes);
 
 type SessionJoinAck = (payload: { ok: boolean; message?: string; room?: string }) => void;
 

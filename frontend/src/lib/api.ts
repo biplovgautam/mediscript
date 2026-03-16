@@ -66,6 +66,19 @@ async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Pro
   return payload as T;
 }
 
+async function apiDownload(path: string): Promise<Blob> {
+  const headers: Record<string, string> = {};
+  if (authToken) {
+    headers.Authorization = `Bearer ${authToken}`;
+  }
+  const response = await fetch(`${API_BASE_URL}${path}`, { headers });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as { message?: string };
+    throw new Error(payload.message || `Request failed (${response.status})`);
+  }
+  return response.blob();
+}
+
 export type AuthUser = {
   _id: string;
   hospitalId: string;
@@ -144,12 +157,12 @@ export type UploadSessionAudioResponse = {
   transcript?: string;
   segments?: TranscriptSegment[];
   analysis?: {
-    complaint?: string;
+    notes?: string;
     symptoms?: string;
-    history?: string;
-    diagnosis?: string;
-    rx?: string;
-    followup?: string;
+    examination?: string;
+    issues?: string;
+    plan?: string;
+    advice?: string;
   } | null;
 };
 
@@ -391,6 +404,8 @@ export const api = {
     apiRequest<Prescription>(`/api/prescriptions/session/${sessionId}/finalize`, {
       method: 'PATCH',
     }),
+
+  downloadOpdPdf: (sessionId: string) => apiDownload(`/api/reports/opd/${sessionId}`),
 
   uploadLabReportForPatient: (patientId: string, payload: UploadLabReportPayload) => {
     const formData = toFormData({

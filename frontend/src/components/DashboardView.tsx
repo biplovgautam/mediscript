@@ -125,10 +125,9 @@ export function DashboardView({ onNewConsult }: { onNewConsult: () => void }) {
   useEffect(() => {
     async function load() {
       try {
-        const [patientsResp, sessionsResp, completedResp] = await Promise.all([
+        const [patientsResp, sessionsResp] = await Promise.all([
           api.getPatients({ limit: 100 }),
           api.getSessions({ limit: 100 }),
-          api.getSessions({ limit: 1, status: "completed" }),
         ]);
 
         const sessions = sessionsResp.items;
@@ -166,27 +165,32 @@ export function DashboardView({ onNewConsult }: { onNewConsult: () => void }) {
         const thisWeekCount = sessions.filter(s => new Date(s.createdAt) >= startOfWeek).length;
 
         // Active = currently recording / processing
-        const activeStatuses = ["recording", "ready_to_record", "processing"];
-        const activeCount = sessions.filter(s => activeStatuses.includes(s.status)).length;
+        const activeStatuses = ["RECORDING", "READY_TO_RECORD", "PROCESSING"];
+        const activeCount = sessions.filter(s => activeStatuses.includes(String(s.status).toUpperCase())).length;
 
         // 4 most-recent consultations
         const recentConsultations = sessions.slice(0, 4).map(s => {
           const patient = typeof s.patientId === "object" && s.patientId !== null
             ? (s.patientId as Patient)
             : null;
+          const normalizedStatus = String(s.status).toUpperCase();
           return {
             name:      patient?.fullName ?? "—",
             id:        String(s._id).slice(-6).toUpperCase(),
             time:      formatRelTime(s.createdAt),
             complaint: s.chiefComplaint ?? "N/A",
-            status:    s.status === "completed" ? "Complete" : "Pending",
+            status:    normalizedStatus === "GENERATED" || normalizedStatus === "COMPLETED" ? "Complete" : "Pending",
           };
         });
+
+        const completedTotal = sessions.filter(
+          (s) => s.status === "GENERATED" || s.status === "COMPLETED"
+        ).length;
 
         setData({
           patientTotal:  patientsResp.pagination.total,
           sessionTotal:  sessionsResp.pagination.total,
-          completedTotal: completedResp.pagination.total,
+          completedTotal,
           activeCount,
           thisWeekCount,
           maleRatio,

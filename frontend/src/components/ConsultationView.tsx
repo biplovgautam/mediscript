@@ -243,12 +243,12 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
 
       if (uploadResponse.analysis) {
         setAiData((prev) => ({
-          complaint: uploadResponse.analysis.complaint || prev.complaint || "",
+          complaint: uploadResponse.analysis.notes || prev.complaint || "",
           symptoms: uploadResponse.analysis.symptoms || prev.symptoms || "",
-          history: uploadResponse.analysis.history || prev.history || "",
-          diagnosis: uploadResponse.analysis.diagnosis || prev.diagnosis || "",
-          rx: uploadResponse.analysis.rx || prev.rx || "",
-          followup: uploadResponse.analysis.followup || prev.followup || "",
+          history: uploadResponse.analysis.examination || prev.history || "",
+          diagnosis: uploadResponse.analysis.issues || prev.diagnosis || "",
+          rx: uploadResponse.analysis.plan || prev.rx || "",
+          followup: uploadResponse.analysis.advice || prev.followup || "",
         }));
       }
 
@@ -292,10 +292,10 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
     try {
       await api.generateNoteDraft({
         sessionId,
-        chiefComplaint: aiData.complaint || chiefComplaint,
-        medicalHistory: aiData.history,
-        examinationFindings: "Recorded from consultation",
-        doctorNotes: aiData.followup,
+        chiefComplaint: chiefComplaint,
+        medicalHistory: "",
+        examinationFindings: aiData.history,
+        doctorNotes: aiData.complaint,
         diagnosisSummary: aiData.diagnosis,
         plan: aiData.rx,
         followUpInstructions: aiData.followup,
@@ -304,8 +304,8 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
       await api.generatePrescriptionDraft({
         sessionId,
         diagnosisText: aiData.diagnosis,
-        advice: aiData.rx || "Follow the prescribed medication and rest",
-        followUp: aiData.followup || "Follow-up as needed",
+        advice: aiData.followup || "Follow the prescribed medication and rest",
+        followUp: "",
         warnings: ["Return immediately if symptoms worsen"],
         items: [
           {

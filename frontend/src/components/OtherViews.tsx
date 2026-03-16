@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState, useRef } from "react";
-import { Filter, Search, Mic, Square } from "lucide-react";
-import { api, type AuthUser, type Patient, type Session } from "@/lib/api";
+import { Filter, Search, Mic, Square, Play, Pause } from "lucide-react";
+import { api, API_BASE_URL, type AuthUser, type Patient, type Session } from "@/lib/api";
 
 const formatDate = (value: string) => {
   const dt = new Date(value);
@@ -17,6 +17,9 @@ export function HistoryView({ onViewDetails }: { onViewDetails?: (sessionId: str
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState<Awaited<ReturnType<typeof api.getSessionWorkspaceData>> | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioPlaying, setAudioPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const loadSessions = async (searchValue?: string) => {
     setLoading(true);
@@ -38,8 +41,21 @@ export function HistoryView({ onViewDetails }: { onViewDetails?: (sessionId: str
   const loadDetails = async (sessionId: string) => {
     setDetailsLoading(true);
     try {
-      const data = await api.getSessionWorkspaceData(sessionId);
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+      setAudioPlaying(false);
+      const [data, recording] = await Promise.all([
+        api.getSessionWorkspaceData(sessionId),
+        api.getSessionAudio(sessionId).catch(() => null),
+      ]);
       setWorkspace(data);
+      if (recording?.fileUrl) {
+        setAudioUrl(`${API_BASE_URL}${recording.fileUrl}`);
+      } else {
+        setAudioUrl(null);
+      }
     } catch (apiError) {
       setError(apiError instanceof Error ? apiError.message : "Unable to load session details");
     } finally {
@@ -123,7 +139,15 @@ export function HistoryView({ onViewDetails }: { onViewDetails?: (sessionId: str
                       {patient ? `${patient.fullName} (${patient.patientGlobalId})` : String(session.patientId)}
                     </td>
                     <td className="px-5 py-[13px] text-[12px]">
-                      <span className="px-3 py-[4px] rounded-full" style={{ background: "#EFF6FF", color: "#1D4ED8" }}>{session.status}</span>
+                      <span
+                        className="px-3 py-[4px] rounded-full"
+                        style={{
+                          background: session.status === "GENERATED" || session.status === "COMPLETED" ? "#ECFDF5" : "#FFF7ED",
+                          color: session.status === "GENERATED" || session.status === "COMPLETED" ? "#065F46" : "#B45309",
+                        }}
+                      >
+                        {session.status === "GENERATED" ? "COMPLETED" : session.status}
+                      </span>
                     </td>
                     <td className="px-5 py-[13px] text-[13px]" style={{ color: "#5B7394" }}>{formatDate(session.createdAt)}</td>
                   </tr>
@@ -152,15 +176,40 @@ export function HistoryView({ onViewDetails }: { onViewDetails?: (sessionId: str
               </div>
               <div>
                 <div className="text-[11px] uppercase tracking-[0.06em]" style={{ color: "#94A3B8" }}>Status</div>
-                <div>{workspace.session.status}</div>
+                <div>{workspace.session.status === "GENERATED" ? "COMPLETED" : workspace.session.status}</div>
               </div>
               <div>
                 <div className="text-[11px] uppercase tracking-[0.06em]" style={{ color: "#94A3B8" }}>Transcript</div>
-                <div className="rounded-xl p-3 mt-1 text-[12px]" style={{ background: "#F8FAFC", border: "1px solid rgba(59,130,246,0.12)", maxHeight: 160, overflow: "auto", fontFamily: "JetBrains Mono, monospace" }}>
+                <div className="rounded-xl p-3 mt-1 text-[12px] relative" style={{ background: "#F8FAFC", border: "1px solid rgba(59,130,246,0.12)", maxHeight: 180, overflow: "auto", fontFamily: "JetBrains Mono, monospace" }}>
+                  <button
+                    onClick={() => {
+                      const audio = audioRef.current;
+                      if (!audio || !audioUrl) return;
+                      if (audioPlaying) {
+                        audio.pause();
+                        setAudioPlaying(false);
+                      } else {
+                        audio.play().then(() => setAudioPlaying(true)).catch(() => setAudioPlaying(false));
+                      }
+                    }}
+                    className="absolute top-2 right-2 p-2 rounded-full"
+                    style={{ background: "#EFF6FF", color: "#1D4ED8", border: "1px solid rgba(59,130,246,0.2)" }}
+                    title={audioPlaying ? "Pause audio" : "Play audio"}
+                  >
+                    {audioPlaying ? <Pause size={14} /> : <Play size={14} />}
+                  </button>
                   {workspace.transcript.length
                     ? workspace.transcript.map((line) => line.text).join(" ")
                     : "No transcript available."}
                 </div>
+                {audioUrl && (
+                  <audio
+                    ref={audioRef}
+                    src={audioUrl}
+                    onEnded={() => setAudioPlaying(false)}
+                    onPause={() => setAudioPlaying(false)}
+                  />
+                )}
               </div>
               <button
                 onClick={() => {
