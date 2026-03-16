@@ -19,14 +19,14 @@ export function SummaryView({
     issues?: string;
     plan?: string;
     advice?: string;
-  }) => {
+  }, editable = false) => {
     const blocks = [
-      { title: "Notes", value: payload.notes },
-      { title: "Symptoms", value: payload.symptoms },
-      { title: "On Examination", value: payload.examination },
-      { title: "Issues", value: payload.issues },
-      { title: "Plan", value: payload.plan },
-      { title: "Advice", value: payload.advice },
+      { title: "Notes", value: payload.notes, key: "notes" },
+      { title: "Symptoms", value: payload.symptoms, key: "symptoms" },
+      { title: "On Examination", value: payload.examination, key: "examination" },
+      { title: "Issues", value: payload.issues, key: "issues" },
+      { title: "Plan", value: payload.plan, key: "plan" },
+      { title: "Advice", value: payload.advice, key: "advice" },
     ];
     return (
       <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
@@ -39,9 +39,23 @@ export function SummaryView({
             <div className="text-[11px] uppercase tracking-[0.08em]" style={{ color: "#94A3B8" }}>
               {block.title}
             </div>
-            <div className="text-[13px] mt-1" style={{ color: "#334155", whiteSpace: "pre-wrap" }}>
-              {block.value || "-"}
-            </div>
+            {editable ? (
+              <textarea
+                value={(summaryDraft as Record<string, string>)[block.key] || ""}
+                onChange={(e) => {
+                  setSummaryDraft((prev) => ({ ...prev, [block.key]: e.target.value }));
+                }}
+                onFocus={() => setEditingSummary(true)}
+                className="mt-2 w-full rounded-lg px-2 py-2 text-[12px] outline-none resize-none"
+                rows={3}
+                style={{ background: "white", border: "1px solid rgba(59,130,246,0.15)" }}
+                placeholder="-"
+              />
+            ) : (
+              <div className="text-[13px] mt-1" style={{ color: "#334155", whiteSpace: "pre-wrap" }}>
+                {block.value || "-"}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -366,41 +380,16 @@ export function SummaryView({
                 </span>
               </div>
               {workspace?.note ? (
-                editingSummary ? (
-                  <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
-                    {[
-                      { key: "notes", label: "Notes", rows: 3 },
-                      { key: "symptoms", label: "Symptoms", rows: 3 },
-                      { key: "examination", label: "On Examination", rows: 3 },
-                      { key: "issues", label: "Issues", rows: 3 },
-                      { key: "plan", label: "Plan", rows: 3 },
-                      { key: "advice", label: "Advice", rows: 3 },
-                    ].map((field) => (
-                      <div key={field.key} className="rounded-xl p-3" style={{ background: "#F8FAFC", border: "1px solid rgba(59,130,246,0.1)" }}>
-                        <div className="text-[11px] uppercase tracking-[0.08em]" style={{ color: "#94A3B8" }}>
-                          {field.label}
-                        </div>
-                        <textarea
-                          value={(summaryDraft as Record<string, string>)[field.key]}
-                          onChange={(e) =>
-                            setSummaryDraft((prev) => ({ ...prev, [field.key]: e.target.value }))
-                          }
-                          className="mt-2 w-full rounded-lg px-2 py-2 text-[12px] outline-none resize-none"
-                          rows={field.rows}
-                          style={{ background: "white", border: "1px solid rgba(59,130,246,0.15)" }}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  buildTemplateBlocks({
-                    notes: workspace.note.doctorNotes,
-                    symptoms: (workspace.note.symptoms || []).join(", "),
-                    examination: workspace.note.examinationFindings,
-                    issues: workspace.note.diagnosisSummary,
-                    plan: workspace.note.plan,
-                    advice: workspace.prescription?.advice,
-                  })
+                buildTemplateBlocks(
+                  {
+                    notes: summaryDraft.notes || workspace.note.doctorNotes,
+                    symptoms: summaryDraft.symptoms || (workspace.note.symptoms || []).join(", "),
+                    examination: summaryDraft.examination || workspace.note.examinationFindings,
+                    issues: summaryDraft.issues || workspace.note.diagnosisSummary,
+                    plan: summaryDraft.plan || workspace.note.plan,
+                    advice: summaryDraft.advice || workspace.prescription?.advice,
+                  },
+                  true
                 )
               ) : (
                 <p className="text-[13px]" style={{ color: "#94A3B8" }}>No note available yet.</p>
@@ -415,24 +404,14 @@ export function SummaryView({
                   <CheckCircle2 size={14} /> Finalize Note
                 </button>
                 {workspace?.note && (
-                  editingSummary ? (
-                    <button
-                      onClick={handleSaveSummary}
-                      disabled={saving}
-                      className="flex items-center gap-2 px-3 py-[8px] rounded-xl text-[12px] font-medium"
-                      style={{ background: "#EFF6FF", color: "#1D4ED8", border: "1px solid rgba(59,130,246,0.2)" }}
-                    >
-                      <Save size={14} /> Save Summary
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => setEditingSummary(true)}
-                      className="flex items-center gap-2 px-3 py-[8px] rounded-xl text-[12px] font-medium"
-                      style={{ background: "#EFF6FF", color: "#1D4ED8", border: "1px solid rgba(59,130,246,0.2)" }}
-                    >
-                      <Save size={14} /> Edit Summary
-                    </button>
-                  )
+                  <button
+                    onClick={handleSaveSummary}
+                    disabled={saving || !editingSummary}
+                    className="flex items-center gap-2 px-3 py-[8px] rounded-xl text-[12px] font-medium disabled:opacity-60"
+                    style={{ background: "#EFF6FF", color: "#1D4ED8", border: "1px solid rgba(59,130,246,0.2)" }}
+                  >
+                    <Save size={14} /> Save Summary
+                  </button>
                 )}
                 {workspace?.note && (
                   <button
@@ -617,6 +596,15 @@ export function SummaryView({
               </div>
             </div>
           </div>
+
+          {workspace?.note?.rawAiPayload?.lastVisitNote && (
+            <div className="rounded-2xl p-5" style={{ background: "#FFFFFF", border: "1px solid rgba(59,130,246,0.09)" }}>
+              <h3 className="text-[15px] font-semibold mb-2" style={{ color: "#0F1F3D" }}>Last Visit Note (Context)</h3>
+              <div className="text-[13px]" style={{ color: "#334155", lineHeight: 1.6 }}>
+                {workspace.note.rawAiPayload.lastVisitNote}
+              </div>
+            </div>
+          )}
 
           <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
             <div className="rounded-2xl p-5" style={{ background: "white", border: "1px solid rgba(59,130,246,0.09)" }}>

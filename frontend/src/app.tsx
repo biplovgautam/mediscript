@@ -30,6 +30,7 @@ export default function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(() => localStorage.getItem("mediscript.token"));
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [patientCount, setPatientCount] = useState<number | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
   const [email, setEmail] = useState("prashant@gmail.com");
@@ -43,6 +44,7 @@ export default function App() {
     setApiToken(token);
     if (!token) {
       setUser(null);
+      setPatientCount(null);
       return;
     }
 
@@ -60,6 +62,14 @@ export default function App() {
       .finally(() => {
         setAuthLoading(false);
       });
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    api
+      .getPatients({ page: 1, limit: 1 })
+      .then((res) => setPatientCount(res.pagination.total))
+      .catch(() => setPatientCount(null));
   }, [token]);
 
   useEffect(() => {
@@ -157,7 +167,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "#F0F5FB", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-      <Sidebar active={view} onNav={setView} user={user} onLogout={handleLogout} />
+      <Sidebar active={view} onNav={setView} user={user} onLogout={handleLogout} patientCount={patientCount} />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* ── Topbar ── */}

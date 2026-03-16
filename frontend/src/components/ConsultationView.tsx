@@ -35,6 +35,8 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
   const [error, setError] = useState("");
   const [hasUploaded, setHasUploaded] = useState(false);
   const [transcriptSaved, setTranscriptSaved] = useState(false);
+  const [includeLastNote, setIncludeLastNote] = useState(false);
+  const [lastNotePreview, setLastNotePreview] = useState<string | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -82,6 +84,29 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (!includeLastNote || !fetchedPatient?._id) {
+      setLastNotePreview(null);
+      return;
+    }
+    api
+      .getSessions({ patientId: fetchedPatient._id, limit: 1 })
+      .then(async (res) => {
+        const lastSession = res.items[0];
+        if (!lastSession?._id) {
+          setLastNotePreview("No previous consultations found.");
+          return;
+        }
+        try {
+          const note = await api.getLatestNoteBySession(lastSession._id);
+          setLastNotePreview(note.doctorNotes || note.diagnosisSummary || "Previous note loaded.");
+        } catch {
+          setLastNotePreview("Previous note not available.");
+        }
+      })
+      .catch(() => setLastNotePreview("Previous note not available."));
+  }, [includeLastNote, fetchedPatient?._id]);
 
   async function startRecording() {
     if (import.meta.env.DEV) {
@@ -290,7 +315,7 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
     setLoading(true);
     setError("");
     try {
-      await api.generateAiDraftFromTranscript(sessionId);
+      await api.generateAiDraftFromTranscript(sessionId, { includeLastNote });
       onComplete(sessionId);
     } catch (apiError) {
       setError(apiError instanceof Error ? apiError.message : "Unable to generate prescription");
@@ -404,32 +429,29 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
             className="rounded-2xl p-5"
             style={{ background: "#FFFFFF", border: "1px solid rgba(59,130,246,0.09)", boxShadow: "0 2px 12px rgba(59,130,246,0.06)" }}
           >
-            <h3 className="text-[13px] font-semibold mb-3" style={{ color: "#0F1F3D" }}>Session Snapshot</h3>
-            <div className="flex flex-col gap-2 text-[12px]" style={{ color: "#5B7394" }}>
-              <div className="flex items-center justify-between">
-                <span>Session ID</span>
-                <span style={{ color: sessionId ? "#0F1F3D" : "#94A3B8" }}>{sessionId || "Not started"}</span>
+            <h3 className="text-[13px] font-semibold mb-2" style={{ color: "#0F1F3D" }}>Advanced Options</h3>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[12px] font-medium" style={{ color: "#0F1F3D" }}>Include last visit note</div>
+                <div className="text-[11px]" style={{ color: "#94A3B8" }}>
+                  Adds previous consultation context to help AI summarize.
+                </div>
               </div>
-              <div className="flex items-center justify-between">
-                <span>Recording</span>
-                <span style={{ color: recording ? "#EF4444" : "#94A3B8" }}>{recording ? (paused ? "Paused" : "Live") : "Idle"}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Elapsed</span>
-                <span style={{ color: "#0F1F3D" }}>{mins}:{secs}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Audio Upload</span>
-                <span style={{ color: hasUploaded ? "#059669" : "#94A3B8" }}>{hasUploaded ? "Uploaded" : "Pending"}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Transcript Save</span>
-                <span style={{ color: transcriptSaved ? "#059669" : "#94A3B8" }}>{transcriptSaved ? "Saved" : "Not saved"}</span>
-              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={includeLastNote}
+                  onChange={(e) => setIncludeLastNote(e.target.checked)}
+                />
+                <div className={`w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all ${includeLastNote ? "bg-blue-600 border-blue-600" : ""}`}></div>
+              </label>
             </div>
-            <div className="mt-3 text-[11px]" style={{ color: "#94A3B8" }}>
-              Use “Stop & Transcribe” after recording, then “Generate Transcription” to save.
-            </div>
+            {includeLastNote && (
+              <div className="mt-3 rounded-xl p-3 text-[12px]" style={{ background: "#F8FAFC", border: "1px solid rgba(59,130,246,0.12)", color: "#334155" }}>
+                {lastNotePreview || "Loading previous note..."}
+              </div>
+            )}
           </div>
         </div>
       </div>

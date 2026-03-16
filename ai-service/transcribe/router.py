@@ -205,6 +205,8 @@ async def transcribe_audio(
 @router.post("/api/ai/insights")
 async def summarize_transcript(payload: dict):
     transcript = (payload.get("transcript") or "").strip()
+    last_note = (payload.get("last_note") or "").strip()
+    last_visit_meta = payload.get("last_visit_meta")
     if not transcript:
         raise HTTPException(status_code=400, detail="transcript is required")
 
@@ -241,7 +243,9 @@ async def summarize_transcript(payload: dict):
                 "  \"plan\": string,\n"
                 "  \"advice\": string\n"
                 "}\n\n"
-                f"Transcript:\n{transcript}"
+                f"Transcript:\n{transcript}\n\n"
+                f"Last visit note (if any):\n{last_note}\n\n"
+                f"Last visit meta:\n{json.dumps(last_visit_meta) if last_visit_meta else '{}'}"
             )
         }
     ]

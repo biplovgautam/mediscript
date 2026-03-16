@@ -127,6 +127,7 @@ export const generateAiDraftFromTranscript = async (req: Request, res: Response)
 		}
 
 		const sessionId = req.body?.sessionId || req.params.sessionId;
+		const includeLastNote = Boolean(req.body?.includeLastNote);
 		if (!sessionId || !mongoose.Types.ObjectId.isValid(sessionId)) {
 			res.status(400).json({ message: 'Valid sessionId is required' });
 			return;
@@ -156,10 +157,49 @@ export const generateAiDraftFromTranscript = async (req: Request, res: Response)
 		const transcriptText = transcript.map((segment) => segment.text).join(' ');
 		const AI_URL = process.env.AI_SERVICE_URL || 'http://127.0.0.1:8000';
 
+		let lastVisitNoteText = '';
+		let lastVisitMeta: Record<string, unknown> | null = null;
+		if (includeLastNote) {
+			const lastSession = await ConsultationSession.findOne({
+				patientId: session.patientId,
+				hospitalId: req.user.hospitalId,
+				doctorId: req.user._id,
+				isDeleted: false,
+				_id: { $ne: session._id },
+			}).sort({ createdAt: -1 });
+
+			if (lastSession) {
+				const lastNote = await ConsultationNote.findOne({
+					consultationSessionId: lastSession._id,
+					hospitalId: req.user.hospitalId,
+				}).sort({ version: -1 });
+
+				if (lastNote) {
+					lastVisitNoteText = [
+						lastNote.doctorNotes,
+						lastNote.diagnosisSummary,
+						lastNote.plan,
+						lastNote.followUpInstructions,
+					]
+						.filter(Boolean)
+						.join(' ');
+				}
+				lastVisitMeta = {
+					sessionId: String(lastSession._id),
+					createdAt: lastSession.createdAt,
+					chiefComplaint: lastSession.chiefComplaint,
+				};
+			}
+		}
+
 		const aiResponse = await fetch(`${AI_URL}/api/ai/insights`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ transcript: transcriptText }),
+			body: JSON.stringify({
+				transcript: transcriptText,
+				last_note: lastVisitNoteText,
+				last_visit_meta: lastVisitMeta,
+			}),
 		});
 
 		if (!aiResponse.ok) {
@@ -215,6 +255,8 @@ export const generateAiDraftFromTranscript = async (req: Request, res: Response)
 			generatedAt: new Date(),
 			rawAiPayload: {
 				transcriptSampleSize: transcript.length,
+				lastVisitNote: lastVisitNoteText,
+				lastVisitMeta,
 			},
 		});
 

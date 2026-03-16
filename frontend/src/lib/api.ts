@@ -379,11 +379,11 @@ export const api = {
     followUpInstructions?: string;
   }) => apiRequest<ConsultationNote>('/api/notes/draft', { method: 'POST', body }),
 
-  generateAiDraftFromTranscript: async (sessionId: string) => {
+  generateAiDraftFromTranscript: async (sessionId: string, options?: { includeLastNote?: boolean }) => {
     try {
       return await apiRequest<{ note: ConsultationNote; prescription: Prescription }>('/api/notes/ai-draft', {
         method: 'POST',
-        body: { sessionId },
+        body: { sessionId, ...options },
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
@@ -392,7 +392,7 @@ export const api = {
       }
       return apiRequest<{ note: ConsultationNote; prescription: Prescription }>(
         `/api/notes/ai-draft/${sessionId}`,
-        { method: 'POST' }
+        { method: 'POST', body: options }
       );
     }
   },

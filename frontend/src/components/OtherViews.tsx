@@ -295,6 +295,9 @@ export function PatientView() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+  const [overview, setOverview] = useState<Awaited<ReturnType<typeof api.getPatientOverview>> | null>(null);
+  const [overviewLoading, setOverviewLoading] = useState(false);
 
   const loadPatients = async (searchValue?: string) => {
     setLoading(true);
@@ -313,35 +316,41 @@ export function PatientView() {
     void loadPatients();
   }, []);
 
-  const selectedPatient = useMemo(() => items[0] || null, [items]);
+  useEffect(() => {
+    if (!selectedPatientId && items.length > 0) {
+      setSelectedPatientId(items[0]._id);
+    }
+  }, [items, selectedPatientId]);
+
+  useEffect(() => {
+    if (!selectedPatientId) {
+      setOverview(null);
+      return;
+    }
+    setOverviewLoading(true);
+    api
+      .getPatientOverview(selectedPatientId)
+      .then((data) => setOverview(data))
+      .catch((apiError) => {
+        setError(apiError instanceof Error ? apiError.message : "Unable to fetch patient overview");
+      })
+      .finally(() => setOverviewLoading(false));
+  }, [selectedPatientId]);
+
+  const selectedPatient = useMemo(() => {
+    return items.find((item) => item._id === selectedPatientId) || null;
+  }, [items, selectedPatientId]);
+
+  const visitCount = overview?.recentSessions?.length ?? 0;
+  const lastVisit = overview?.recentSessions?.[0]?.createdAt
+    ? new Date(overview.recentSessions[0].createdAt).toLocaleDateString()
+    : "-";
+  const lastRx = overview?.latestPrescription?.diagnosisText || "-";
+  const recentLabs = overview?.recentLabReports?.length ?? 0;
 
   return (
-    <div className="grid gap-5" style={{ gridTemplateColumns: "290px 1fr" }}>
-      <div className="rounded-2xl overflow-hidden" style={{ background: "#FFFFFF", border: "1px solid rgba(59,130,246,0.09)", boxShadow: "0 2px 16px rgba(59,130,246,0.06)" }}>
-        <div className="p-6 text-center" style={{ background: "linear-gradient(135deg, #1D4ED8, #4F46E5)" }}>
-          <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold text-white mx-auto mb-3" style={{ background: "rgba(255,255,255,0.2)", border: "3px solid rgba(255,255,255,0.35)" }}>
-            {selectedPatient?.fullName?.[0] || "P"}
-          </div>
-          <p className="text-white font-bold text-[17px]">{selectedPatient?.fullName || "No patient selected"}</p>
-          <p className="text-[12px] mt-1" style={{ color: "rgba(255,255,255,0.65)" }}>{selectedPatient?.patientGlobalId || "-"}</p>
-        </div>
-        <div className="p-5">
-          <div className="flex justify-between py-[8px]" style={{ borderBottom: "1px solid rgba(59,130,246,0.07)" }}>
-            <span className="text-[12px]" style={{ color: "#94A3B8" }}>Age</span>
-            <span className="text-[13px] font-medium" style={{ color: "#0F1F3D" }}>{selectedPatient?.age ?? "-"}</span>
-          </div>
-          <div className="flex justify-between py-[8px]" style={{ borderBottom: "1px solid rgba(59,130,246,0.07)" }}>
-            <span className="text-[12px]" style={{ color: "#94A3B8" }}>Sex</span>
-            <span className="text-[13px] font-medium" style={{ color: "#0F1F3D" }}>{selectedPatient?.sex ?? "-"}</span>
-          </div>
-          <div className="flex justify-between py-[8px]" style={{ borderBottom: "1px solid rgba(59,130,246,0.07)" }}>
-            <span className="text-[12px]" style={{ color: "#94A3B8" }}>Phone</span>
-            <span className="text-[13px] font-medium" style={{ color: "#0F1F3D" }}>{selectedPatient?.phone ?? "-"}</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-3">
+    <div className="grid gap-5" style={{ gridTemplateColumns: "1.4fr 0.9fr" }}>
+      <div className="flex flex-col gap-4">
         <div className="relative">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "#94A3B8" }} />
           <input
@@ -364,32 +373,139 @@ export function PatientView() {
         )}
 
         <div className="rounded-2xl overflow-hidden" style={{ background: "#FFFFFF", border: "1px solid rgba(59,130,246,0.09)" }}>
-          <table className="w-full" style={{ borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ background: "rgba(240,245,251,0.8)", borderBottom: "1px solid rgba(59,130,246,0.09)" }}>
-                {["Global ID", "Name", "Sex", "Age", "Phone"].map((h) => (
-                  <th key={h} className="text-left px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.05em]" style={{ color: "#5B7394" }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={5} className="px-5 py-4 text-[13px]" style={{ color: "#64748B" }}>Loading patients...</td></tr>
-              ) : items.length === 0 ? (
-                <tr><td colSpan={5} className="px-5 py-4 text-[13px]" style={{ color: "#94A3B8" }}>No patients found.</td></tr>
-              ) : (
-                items.map((patient) => (
-                  <tr key={patient._id} style={{ borderBottom: "1px solid rgba(59,130,246,0.06)" }}>
-                    <td className="px-5 py-[13px] text-[12px]" style={{ color: "#1E293B", fontFamily: "JetBrains Mono, monospace" }}>{patient.patientGlobalId}</td>
-                    <td className="px-5 py-[13px] text-[13px]" style={{ color: "#0F1F3D" }}>{patient.fullName}</td>
-                    <td className="px-5 py-[13px] text-[13px]" style={{ color: "#5B7394" }}>{patient.sex || "-"}</td>
-                    <td className="px-5 py-[13px] text-[13px]" style={{ color: "#5B7394" }}>{patient.age ?? "-"}</td>
-                    <td className="px-5 py-[13px] text-[13px]" style={{ color: "#5B7394" }}>{patient.phone || "-"}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+          <div className="p-4 border-b" style={{ borderColor: "rgba(59,130,246,0.09)" }}>
+            <div className="text-[12px] uppercase tracking-[0.1em]" style={{ color: "#94A3B8" }}>Patients</div>
+            <div className="text-[14px] font-semibold" style={{ color: "#0F1F3D" }}>Select a patient to view details</div>
+          </div>
+          <div className="max-h-[520px] overflow-y-auto">
+            {loading ? (
+              <div className="px-5 py-4 text-[13px]" style={{ color: "#64748B" }}>Loading patients...</div>
+            ) : items.length === 0 ? (
+              <div className="px-5 py-4 text-[13px]" style={{ color: "#94A3B8" }}>No patients found.</div>
+            ) : (
+              items.map((patient) => (
+                <div
+                  key={patient._id}
+                  className="px-5 py-4 flex items-center justify-between"
+                  style={{
+                    borderBottom: "1px solid rgba(59,130,246,0.06)",
+                    background: selectedPatientId === patient._id ? "#EFF6FF" : "transparent",
+                    cursor: "pointer",
+                  }}
+                  onClick={() => setSelectedPatientId(patient._id)}
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-10 h-10 rounded-full flex items-center justify-center text-[12px] font-semibold"
+                      style={{ background: "#DBEAFE", color: "#1D4ED8" }}
+                    >
+                      {patient.fullName?.split(" ").slice(0, 2).map((p) => p[0]).join("").toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="text-[14px] font-semibold" style={{ color: "#0F1F3D" }}>{patient.fullName}</div>
+                      <div className="text-[12px]" style={{ color: "#64748B" }}>
+                        {patient.sex || "-"} · {patient.age ?? "-"} yrs · {patient.patientGlobalId}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-[12px]" style={{ color: "#1D4ED8", fontWeight: 600 }}>
+                    {selectedPatientId === patient._id ? `${visitCount} visits` : "View"}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-4">
+        <div
+          className="rounded-3xl p-5"
+          style={{
+            background: "linear-gradient(135deg, #0F172A 0%, #111827 45%, #1F2937 100%)",
+            border: "1px solid rgba(59,130,246,0.18)",
+            boxShadow: "0 18px 40px rgba(15,23,42,0.35)",
+          }}
+        >
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div
+                className="w-14 h-14 rounded-2xl flex items-center justify-center text-[18px] font-bold"
+                style={{
+                  background: "linear-gradient(135deg, #60A5FA, #2563EB)",
+                  color: "white",
+                  boxShadow: "0 10px 20px rgba(37,99,235,0.35)",
+                }}
+              >
+                {selectedPatient?.fullName?.[0] || "P"}
+              </div>
+              <div>
+                <div className="text-[18px] font-semibold" style={{ color: "white" }}>
+                  {selectedPatient?.fullName || "Select a patient"}
+                </div>
+                <div className="text-[12px]" style={{ color: "rgba(148,163,184,0.9)" }}>
+                  {selectedPatient?.sex || "-"} · {selectedPatient?.age ?? "-"} yrs · {visitCount} visits
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="px-3 py-1 rounded-full text-[11px] font-semibold" style={{ background: "rgba(34,197,94,0.2)", color: "#86EFAC" }}>
+                Active
+              </div>
+              <div className="px-3 py-1 rounded-full text-[11px]" style={{ background: "rgba(59,130,246,0.15)", color: "#BFDBFE" }}>
+                {selectedPatient?.patientGlobalId || "No ID"}
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+            {[
+              { label: "Last Visit", value: overviewLoading ? "Loading..." : lastVisit },
+              { label: "Recent Labs", value: overviewLoading ? "..." : String(recentLabs) },
+              { label: "Last Diagnosis", value: overviewLoading ? "..." : lastRx },
+              { label: "Phone", value: selectedPatient?.phone || "-" },
+            ].map((card) => (
+              <div key={card.label} className="rounded-2xl p-3" style={{ background: "rgba(15,23,42,0.6)", border: "1px solid rgba(148,163,184,0.2)" }}>
+                <div className="text-[10px] uppercase tracking-[0.1em]" style={{ color: "rgba(148,163,184,0.8)" }}>{card.label}</div>
+                <div className="text-[13px] mt-2" style={{ color: "white" }}>{card.value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-2xl p-4" style={{ background: "#FFFFFF", border: "1px solid rgba(59,130,246,0.09)" }}>
+          <div className="text-[12px] uppercase tracking-[0.08em]" style={{ color: "#94A3B8" }}>Recent Visits</div>
+          <div className="mt-3 flex flex-col gap-2">
+            {(overview?.recentSessions || []).slice(0, 5).map((session) => (
+              <div key={session._id} className="rounded-xl px-3 py-2" style={{ background: "#F8FAFC", border: "1px solid rgba(59,130,246,0.1)" }}>
+                <div className="text-[12px]" style={{ color: "#0F1F3D" }}>
+                  {new Date(session.createdAt).toLocaleDateString()} · {session.status}
+                </div>
+                <div className="text-[11px] mt-1" style={{ color: "#64748B" }}>
+                  {session.chiefComplaint || "No chief complaint"}
+                </div>
+              </div>
+            ))}
+            {!overview?.recentSessions?.length && (
+              <div className="text-[12px]" style={{ color: "#94A3B8" }}>No visits recorded yet.</div>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-2xl p-4" style={{ background: "#FFFFFF", border: "1px solid rgba(59,130,246,0.09)" }}>
+          <div className="text-[12px] uppercase tracking-[0.08em]" style={{ color: "#94A3B8" }}>Quick Analytics</div>
+          <div className="mt-3 grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
+            {[
+              { label: "Total Visits", value: overviewLoading ? "..." : String(visitCount) },
+              { label: "Recent Labs", value: overviewLoading ? "..." : String(recentLabs) },
+              { label: "Active Rx", value: overview?.latestPrescription ? "Yes" : "No" },
+              { label: "Status", value: overview?.recentSessions?.[0]?.status || "-" },
+            ].map((item) => (
+              <div key={item.label} className="rounded-xl px-3 py-2" style={{ background: "#F8FAFC", border: "1px solid rgba(59,130,246,0.1)" }}>
+                <div className="text-[10px] uppercase tracking-[0.08em]" style={{ color: "#94A3B8" }}>{item.label}</div>
+                <div className="text-[13px] mt-1" style={{ color: "#0F1F3D" }}>{item.value}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

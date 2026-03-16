@@ -5,23 +5,23 @@ import {
 } from "lucide-react";
 import type { AuthUser } from "@/lib/api";
 
-const navItems = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, section: "main" },
-  { id: "consultation", label: "New Consultation", icon: Mic, section: "main" },
-  { id: "history", label: "History", icon: Clock, section: "main", badge: "24" },
-  { id: "patients", label: "Patients", icon: Users, section: "main" },
-  { id: "notes", label: "Medical Notes", icon: FileText, section: "reports" },
-  { id: "settings", label: "Settings", icon: Settings, section: "account" },
-];
-
 interface SidebarProps {
   active: string;
   onNav: (id: string) => void;
   user: AuthUser | null;
   onLogout: () => void;
+  patientCount?: number | null;
 }
 
-export function Sidebar({ active, onNav, user, onLogout }: SidebarProps) {
+export function Sidebar({ active, onNav, user, onLogout, patientCount }: SidebarProps) {
+  const navItems = [
+    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, section: "main" },
+    { id: "consultation", label: "New Consultation", icon: Mic, section: "main" },
+    { id: "history", label: "History", icon: Clock, section: "main", badge: "24" },
+    { id: "patients", label: "Patients", icon: Users, section: "main", badge: patientCount ? String(patientCount) : undefined },
+    { id: "notes", label: "Medical Notes", icon: FileText, section: "reports" },
+    { id: "settings", label: "Settings", icon: Settings, section: "account" },
+  ];
   return (
     <aside
       className="flex flex-col w-[228px] flex-shrink-0 h-screen relative overflow-hidden"
