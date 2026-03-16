@@ -412,3 +412,41 @@ export const getSessionWorkspaceData = async (req: Request, res: Response) => {
 		return;
 	}
 };
+
+export const deleteSession = async (req: Request, res: Response) => {
+	try {
+		if (!req.user) {
+			res.status(401).json({ message: 'Not authorized' });
+			return;
+		}
+
+		const id = requireStringParam(req.params.id);
+		if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+			res.status(400).json({ message: 'Invalid session id' });
+			return;
+		}
+
+		const session = await ConsultationSession.findOne({
+			_id: id,
+			hospitalId: req.user.hospitalId,
+			doctorId: req.user._id,
+			isDeleted: false,
+		});
+
+		if (!session) {
+			res.status(404).json({ message: 'Session not found' });
+			return;
+		}
+
+		session.isDeleted = true;
+		session.deletedAt = new Date();
+		await session.save();
+
+		res.json({ message: 'Session deleted' });
+		return;
+	} catch (error) {
+		const message = error instanceof Error ? error.message : 'Unable to delete session';
+		res.status(500).json({ message });
+		return;
+	}
+};

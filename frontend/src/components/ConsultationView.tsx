@@ -4,12 +4,12 @@ import { Mic, Square, Pause, Play, FileText, Brain, Search, User } from "lucide-
 import { api, type Patient } from "@/lib/api";
 
 const NOTE_SECTIONS = [
-  { id: "complaint", label: "Chief Complaint", color: "#2563EB" },
+  { id: "complaint", label: "Notes", color: "#2563EB" },
   { id: "symptoms", label: "Symptoms", color: "#D97706" },
-  { id: "history", label: "Medical History", color: "#059669" },
-  { id: "diagnosis", label: "Possible Diagnosis", color: "#DC2626" },
-  { id: "rx", label: "Suggested Prescription", color: "#7C3AED" },
-  { id: "followup", label: "Follow-up", color: "#0891B2" },
+  { id: "history", label: "On Examination", color: "#059669" },
+  { id: "diagnosis", label: "Issues", color: "#DC2626" },
+  { id: "rx", label: "Plan", color: "#7C3AED" },
+  { id: "followup", label: "Advice", color: "#0891B2" },
 ];
 
 export function ConsultationView({ onComplete }: { onComplete: (sessionId: string) => void }) {
@@ -21,7 +21,7 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
   const [sectionToggles, setSectionToggles] = useState<Record<string, boolean>>({
     complaint: true,
     symptoms: true,
-    history: false,
+    history: true,
     diagnosis: true,
     rx: true,
     followup: true,
@@ -290,34 +290,7 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
     setLoading(true);
     setError("");
     try {
-      await api.generateNoteDraft({
-        sessionId,
-        chiefComplaint: chiefComplaint,
-        medicalHistory: "",
-        examinationFindings: aiData.history,
-        doctorNotes: aiData.complaint,
-        diagnosisSummary: aiData.diagnosis,
-        plan: aiData.rx,
-        followUpInstructions: aiData.followup,
-      });
-
-      await api.generatePrescriptionDraft({
-        sessionId,
-        diagnosisText: aiData.diagnosis,
-        advice: aiData.followup || "Follow the prescribed medication and rest",
-        followUp: "",
-        warnings: ["Return immediately if symptoms worsen"],
-        items: [
-          {
-            medicineName: "Paracetamol",
-            strength: "500mg",
-            dose: "1 tablet",
-            frequency: "three times daily",
-            durationDays: 5,
-            beforeAfterFood: "after",
-          },
-        ],
-      });
+      await api.generateAiDraftFromTranscript(sessionId);
       onComplete(sessionId);
     } catch (apiError) {
       setError(apiError instanceof Error ? apiError.message : "Unable to generate prescription");
@@ -329,12 +302,6 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
   const mins = String(Math.floor(elapsed / 60)).padStart(2, "0");
   const secs = String(elapsed % 60).padStart(2, "0");
   const sessionStarted = Boolean(sessionId);
-  const steps = [
-    { label: "Patient selected", done: Boolean(fetchedPatient?._id) },
-    { label: "Recording started", done: recording || sessionStarted },
-    { label: "Audio uploaded", done: hasUploaded },
-    { label: "Transcript saved", done: transcriptSaved },
-  ];
 
   return (
     <div className="flex flex-col gap-4">
@@ -433,29 +400,6 @@ export function ConsultationView({ onComplete }: { onComplete: (sessionId: strin
         </div>
 
         <div className="flex flex-col gap-4">
-          <div
-            className="rounded-2xl p-5"
-            style={{ background: "#FFFFFF", border: "1px solid rgba(59,130,246,0.09)", boxShadow: "0 2px 12px rgba(59,130,246,0.06)" }}
-          >
-            <h3 className="text-[13px] font-semibold mb-3" style={{ color: "#0F1F3D" }}>Consultation Flow</h3>
-            <div className="flex flex-col gap-2">
-              {steps.map((step, index) => (
-                <div key={step.label} className="flex items-center justify-between rounded-xl px-3 py-2" style={{ background: "#F8FAFC", border: "1px solid rgba(59,130,246,0.08)" }}>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-semibold" style={{ color: "#94A3B8" }}>{index + 1}</span>
-                    <span className="text-[12px]" style={{ color: "#334155" }}>{step.label}</span>
-                  </div>
-                  <span
-                    className="text-[10px] font-semibold uppercase tracking-[0.08em]"
-                    style={{ color: step.done ? "#059669" : "#94A3B8" }}
-                  >
-                    {step.done ? "Done" : "Pending"}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
           <div
             className="rounded-2xl p-5"
             style={{ background: "#FFFFFF", border: "1px solid rgba(59,130,246,0.09)", boxShadow: "0 2px 12px rgba(59,130,246,0.06)" }}

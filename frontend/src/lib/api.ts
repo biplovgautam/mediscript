@@ -308,6 +308,18 @@ export const api = {
   stopSessionRecording: (sessionId: string) =>
     apiRequest<Session>(`/api/sessions/${sessionId}/stop-recording`, { method: 'POST' }),
 
+  deleteSession: async (sessionId: string) => {
+    try {
+      return await apiRequest<{ message: string }>(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (!message.includes('404') && !message.includes('Not found')) {
+        throw error;
+      }
+      return apiRequest<{ message: string }>(`/api/sessions/${sessionId}/delete`, { method: 'POST' });
+    }
+  },
+
   linkLabReportsToSession: (sessionId: string, labReportIds: string[]) =>
     apiRequest<Session>(`/api/sessions/${sessionId}/lab-reports`, {
       method: 'PATCH',
@@ -358,7 +370,29 @@ export const api = {
     medicalHistory?: string;
     examinationFindings?: string;
     doctorNotes?: string;
+    symptoms?: string[];
+    diagnosisSummary?: string;
+    plan?: string;
+    followUpInstructions?: string;
   }) => apiRequest<ConsultationNote>('/api/notes/draft', { method: 'POST', body }),
+
+  generateAiDraftFromTranscript: async (sessionId: string) => {
+    try {
+      return await apiRequest<{ note: ConsultationNote; prescription: Prescription }>('/api/notes/ai-draft', {
+        method: 'POST',
+        body: { sessionId },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (!message.includes('404') && !message.includes('Not found')) {
+        throw error;
+      }
+      return apiRequest<{ note: ConsultationNote; prescription: Prescription }>(
+        `/api/notes/ai-draft/${sessionId}`,
+        { method: 'POST' }
+      );
+    }
+  },
 
   getLatestNoteBySession: (sessionId: string) =>
     apiRequest<ConsultationNote>(`/api/notes/session/${sessionId}`),

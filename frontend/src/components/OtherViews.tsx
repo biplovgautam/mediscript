@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState, useRef } from "react";
-import { Filter, Search, Mic, Square, Play, Pause } from "lucide-react";
+import { Filter, Search, Mic, Square, Play, Pause, Trash2 } from "lucide-react";
 import { api, API_BASE_URL, type AuthUser, type Patient, type Session } from "@/lib/api";
 
 const formatDate = (value: string) => {
@@ -20,6 +20,8 @@ export function HistoryView({ onViewDetails }: { onViewDetails?: (sessionId: str
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioPlaying, setAudioPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Session | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const loadSessions = async (searchValue?: string) => {
     setLoading(true);
@@ -102,7 +104,7 @@ export function HistoryView({ onViewDetails }: { onViewDetails?: (sessionId: str
           <table className="w-full" style={{ borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "rgba(240,245,251,0.8)", borderBottom: "1px solid rgba(59,130,246,0.09)" }}>
-              {["Session ID", "Patient", "Status", "Created At"].map((h) => (
+              {["Session ID", "Patient", "Status", "Created At", "Actions"].map((h) => (
                 <th key={h} className="text-left px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.05em]" style={{ color: "#5B7394" }}>{h}</th>
               ))}
             </tr>
@@ -150,6 +152,19 @@ export function HistoryView({ onViewDetails }: { onViewDetails?: (sessionId: str
                       </span>
                     </td>
                     <td className="px-5 py-[13px] text-[13px]" style={{ color: "#5B7394" }}>{formatDate(session.createdAt)}</td>
+                    <td className="px-5 py-[13px] text-[12px]">
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setDeleteTarget(session);
+                        }}
+                        className="p-2 rounded-lg"
+                        style={{ background: "#FEF2F2", color: "#DC2626" }}
+                        title="Delete session"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </td>
                   </tr>
                 );
               })
@@ -226,6 +241,51 @@ export function HistoryView({ onViewDetails }: { onViewDetails?: (sessionId: str
           )}
         </div>
       </div>
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(15,23,42,0.45)" }}>
+          <div className="w-full max-w-md rounded-2xl p-5" style={{ background: "white", border: "1px solid rgba(59,130,246,0.12)", boxShadow: "0 12px 30px rgba(15,23,42,0.2)" }}>
+            <h3 className="text-[16px] font-semibold" style={{ color: "#0F1F3D" }}>Delete Session?</h3>
+            <p className="text-[13px] mt-2" style={{ color: "#64748B" }}>
+              This will permanently remove session <span style={{ color: "#0F1F3D", fontWeight: 600 }}>{deleteTarget._id}</span> from your history.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="px-4 py-2 rounded-xl text-[12px] font-semibold"
+                style={{ background: "#F8FAFC", color: "#334155", border: "1px solid rgba(59,130,246,0.15)" }}
+              >
+                Cancel
+              </button>
+              <button
+                disabled={deleteLoading}
+                onClick={async () => {
+                  if (!deleteTarget) return;
+                  setDeleteLoading(true);
+                  try {
+                    await api.deleteSession(deleteTarget._id);
+                    setItems((prev) => prev.filter((item) => item._id !== deleteTarget._id));
+                    if (selectedSessionId === deleteTarget._id) {
+                      setSelectedSessionId(null);
+                      setWorkspace(null);
+                      setAudioUrl(null);
+                    }
+                    setDeleteTarget(null);
+                  } catch (apiError) {
+                    setError(apiError instanceof Error ? apiError.message : "Unable to delete session");
+                  } finally {
+                    setDeleteLoading(false);
+                  }
+                }}
+                className="px-4 py-2 rounded-xl text-[12px] font-semibold text-white disabled:opacity-60"
+                style={{ background: "#DC2626" }}
+              >
+                {deleteLoading ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

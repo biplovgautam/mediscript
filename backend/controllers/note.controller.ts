@@ -9,6 +9,7 @@ import ConsultationSession, {
 	SessionStatus,
 } from '../models/consultationSession.model.js';
 import TranscriptSegment from '../models/transcriptSegment.model.js';
+import Prescription, { PrescriptionStatus } from '../models/prescription.model.js';
 import { emitToSessionRoom } from '../utils/socket.util.js';
 
 const requireStringParam = (value: unknown): string | null => {
@@ -60,7 +61,12 @@ export const generateNoteDraft = async (req: Request, res: Response) => {
 			.limit(200);
 
 		const transcriptText = transcript.map((segment) => segment.text).join(' ');
-		const inferredSymptoms = splitSymptoms(chiefComplaint || transcriptText);
+		let inferredSymptoms = splitSymptoms(chiefComplaint || transcriptText);
+		if (Array.isArray(req.body.symptoms) && req.body.symptoms.length > 0) {
+			inferredSymptoms = req.body.symptoms.map((item: unknown) => String(item)).filter(Boolean).slice(0, 12);
+		} else if (typeof req.body.symptoms === 'string' && req.body.symptoms.trim()) {
+			inferredSymptoms = splitSymptoms(req.body.symptoms);
+		}
 
 		const previousVersion = await ConsultationNote.findOne({
 			consultationSessionId: session._id,
@@ -108,6 +114,147 @@ export const generateNoteDraft = async (req: Request, res: Response) => {
 		return;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : 'Unable to generate consultation note';
+		res.status(500).json({ message });
+		return;
+	}
+};
+
+export const generateAiDraftFromTranscript = async (req: Request, res: Response) => {
+	try {
+		if (!req.user) {
+			res.status(401).json({ message: 'Not authorized' });
+			return;
+		}
+
+		const sessionId = req.body?.sessionId || req.params.sessionId;
+		if (!sessionId || !mongoose.Types.ObjectId.isValid(sessionId)) {
+			res.status(400).json({ message: 'Valid sessionId is required' });
+			return;
+		}
+
+		const session = await ConsultationSession.findOne({
+			_id: sessionId,
+			hospitalId: req.user.hospitalId,
+			doctorId: req.user._id,
+			isDeleted: false,
+		});
+		if (!session) {
+			res.status(404).json({ message: 'Session not found' });
+			return;
+		}
+
+		const transcript = await TranscriptSegment.find(
+			{
+				consultationSessionId: session._id,
+				hospitalId: req.user.hospitalId,
+			},
+			{ text: 1 }
+		)
+			.sort({ sequenceNumber: 1 })
+			.limit(500);
+
+		const transcriptText = transcript.map((segment) => segment.text).join(' ');
+		const AI_URL = process.env.AI_SERVICE_URL || 'http://127.0.0.1:8000';
+
+		const aiResponse = await fetch(`${AI_URL}/api/ai/insights`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ transcript: transcriptText }),
+		});
+
+		if (!aiResponse.ok) {
+			const errorText = await aiResponse.text();
+			res.status(502).json({ message: `AI insights failed: ${errorText}` });
+			return;
+		}
+
+		const aiPayload = (await aiResponse.json()) as {
+			analysis?: {
+				notes?: string;
+				symptoms?: string;
+				examination?: string;
+				issues?: string;
+				plan?: string;
+				advice?: string;
+			};
+		};
+
+		const analysis = aiPayload.analysis || {};
+		const symptoms = analysis.symptoms ? splitSymptoms(analysis.symptoms) : [];
+
+		const previousNote = await ConsultationNote.findOne({
+			consultationSessionId: session._id,
+			hospitalId: req.user.hospitalId,
+		}).sort({ version: -1 });
+
+		const note = await ConsultationNote.create({
+			hospitalId: req.user.hospitalId,
+			consultationSessionId: session._id,
+			patientId: session.patientId,
+			doctorId: req.user._id,
+			version: (previousNote?.version || 0) + 1,
+			source: NoteSource.AI,
+			status: NoteStatus.REVIEW_REQUIRED,
+			chiefComplaint: session.chiefComplaint,
+			symptoms,
+			examinationFindings: analysis.examination,
+			diagnosisSummary: analysis.issues,
+			plan: analysis.plan,
+			followUpInstructions: analysis.advice,
+			doctorNotes: analysis.notes,
+			aiModelName: 'groq-chat',
+			aiConfidence: 0.72,
+			generatedAt: new Date(),
+			rawAiPayload: {
+				transcriptSampleSize: transcript.length,
+			},
+		});
+
+		const previousPrescription = await Prescription.findOne({
+			consultationSessionId: session._id,
+			hospitalId: req.user.hospitalId,
+			isDeleted: false,
+		}).sort({ version: -1 });
+
+		const prescription = await Prescription.create({
+			hospitalId: req.user.hospitalId,
+			consultationSessionId: session._id,
+			patientId: session.patientId,
+			doctorId: req.user._id,
+			consultationNoteId: note._id,
+			version: (previousPrescription?.version || 0) + 1,
+			status: PrescriptionStatus.AI_DRAFT,
+			diagnosisText: analysis.issues,
+			advice: analysis.advice,
+			followUp: '',
+			warnings: [],
+			items: [],
+			generatedAt: new Date(),
+		});
+
+		session.currentNoteId = note._id;
+		session.currentPrescriptionId = prescription._id;
+		session.aiGenerationStatus = AiGenerationStatus.COMPLETED;
+		session.status = SessionStatus.GENERATED;
+		await session.save();
+
+		emitToSessionRoom(req.app, sessionId, 'note.draft.generated', {
+			sessionId,
+			noteId: String(note._id),
+			version: note.version,
+			status: note.status,
+		});
+		emitToSessionRoom(req.app, sessionId, 'prescription.draft.generated', {
+			sessionId,
+			prescriptionId: String(prescription._id),
+			status: prescription.status,
+			version: prescription.version,
+		});
+
+		res.status(201).json({ note, prescription, analysis });
+		return;
+	} catch (error) {
+		const message = error instanceof Error ? error.message : 'Unable to generate AI draft';
 		res.status(500).json({ message });
 		return;
 	}

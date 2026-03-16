@@ -12,6 +12,41 @@ export function SummaryView({
   onClearSelection: () => void;
   onSelectFromHistory: () => void;
 }) {
+  const buildTemplateBlocks = (payload: {
+    notes?: string;
+    symptoms?: string;
+    examination?: string;
+    issues?: string;
+    plan?: string;
+    advice?: string;
+  }) => {
+    const blocks = [
+      { title: "Notes", value: payload.notes },
+      { title: "Symptoms", value: payload.symptoms },
+      { title: "On Examination", value: payload.examination },
+      { title: "Issues", value: payload.issues },
+      { title: "Plan", value: payload.plan },
+      { title: "Advice", value: payload.advice },
+    ];
+    return (
+      <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
+        {blocks.map((block) => (
+          <div
+            key={block.title}
+            className="rounded-xl p-3"
+            style={{ background: "#F8FAFC", border: "1px solid rgba(59,130,246,0.1)" }}
+          >
+            <div className="text-[11px] uppercase tracking-[0.08em]" style={{ color: "#94A3B8" }}>
+              {block.title}
+            </div>
+            <div className="text-[13px] mt-1" style={{ color: "#334155", whiteSpace: "pre-wrap" }}>
+              {block.value || "-"}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
   const [workspace, setWorkspace] = useState<SessionWorkspace | null>(null);
   const [sessionLabReports, setSessionLabReports] = useState<Array<{ _id: string; panelName: string; department: string; createdAt: string }>>([]);
   const [loading, setLoading] = useState(false);
@@ -19,6 +54,15 @@ export function SummaryView({
   const [error, setError] = useState("");
   const [editingPrescription, setEditingPrescription] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [editingSummary, setEditingSummary] = useState(false);
+  const [summaryDraft, setSummaryDraft] = useState({
+    notes: "",
+    symptoms: "",
+    examination: "",
+    issues: "",
+    plan: "",
+    advice: "",
+  });
 
   const handleDownloadPdf = async () => {
     if (!sessionId) return;
@@ -92,6 +136,19 @@ export function SummaryView({
     setEditingPrescription(false);
   }, [workspace?.prescription?._id]);
 
+  useEffect(() => {
+    if (!workspace?.note) return;
+    setSummaryDraft({
+      notes: workspace.note.doctorNotes || "",
+      symptoms: (workspace.note.symptoms || []).join(", "),
+      examination: workspace.note.examinationFindings || "",
+      issues: workspace.note.diagnosisSummary || "",
+      plan: workspace.note.plan || "",
+      advice: workspace.prescription?.advice || "",
+    });
+    setEditingSummary(false);
+  }, [workspace?.note?._id, workspace?.prescription?._id]);
+
   const transcriptText = useMemo(() => {
     if (!workspace?.transcript?.length) return "";
     return workspace.transcript
@@ -150,6 +207,49 @@ export function SummaryView({
       setEditingPrescription(false);
     } catch (apiError) {
       setError(apiError instanceof Error ? apiError.message : "Unable to save prescription");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveSummary = async () => {
+    if (!sessionId) return;
+    setSaving(true);
+    setError("");
+    try {
+      await api.updateLatestNoteBySession(sessionId, {
+        doctorNotes: summaryDraft.notes,
+        symptoms: summaryDraft.symptoms
+          .split(/[,\n;]/)
+          .map((item) => item.trim())
+          .filter(Boolean),
+        examinationFindings: summaryDraft.examination,
+        diagnosisSummary: summaryDraft.issues,
+        plan: summaryDraft.plan,
+      });
+      await api.updateLatestPrescriptionBySession(sessionId, {
+        advice: summaryDraft.advice,
+      });
+      await loadWorkspace();
+      setEditingSummary(false);
+    } catch (apiError) {
+      setError(apiError instanceof Error ? apiError.message : "Unable to save consultation summary");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRegenerateAi = async () => {
+    if (!sessionId) return;
+    setSaving(true);
+    setError("");
+    try {
+      await api.generateAiDraftFromTranscript(sessionId);
+      await loadWorkspace();
+      setEditingSummary(false);
+      setEditingPrescription(false);
+    } catch (apiError) {
+      setError(apiError instanceof Error ? apiError.message : "Unable to regenerate AI summary");
     } finally {
       setSaving(false);
     }
@@ -262,14 +362,42 @@ export function SummaryView({
                 </span>
               </div>
               {workspace?.note ? (
-                <div className="text-[13px]" style={{ color: "#334155", lineHeight: 1.6 }}>
-                  <p><strong>Notes:</strong> {workspace.note.doctorNotes || "-"}</p>
-                  <p><strong>Symptoms:</strong> {(workspace.note.symptoms || []).join(", ") || "-"}</p>
-                  <p><strong>On Examination:</strong> {workspace.note.examinationFindings || "-"}</p>
-                  <p><strong>Issues:</strong> {workspace.note.diagnosisSummary || "-"}</p>
-                  <p><strong>Plan:</strong> {workspace.note.plan || "-"}</p>
-                  <p><strong>Advice:</strong> {workspace.prescription?.advice || "-"}</p>
-                </div>
+                editingSummary ? (
+                  <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                    {[
+                      { key: "notes", label: "Notes", rows: 3 },
+                      { key: "symptoms", label: "Symptoms", rows: 3 },
+                      { key: "examination", label: "On Examination", rows: 3 },
+                      { key: "issues", label: "Issues", rows: 3 },
+                      { key: "plan", label: "Plan", rows: 3 },
+                      { key: "advice", label: "Advice", rows: 3 },
+                    ].map((field) => (
+                      <div key={field.key} className="rounded-xl p-3" style={{ background: "#F8FAFC", border: "1px solid rgba(59,130,246,0.1)" }}>
+                        <div className="text-[11px] uppercase tracking-[0.08em]" style={{ color: "#94A3B8" }}>
+                          {field.label}
+                        </div>
+                        <textarea
+                          value={(summaryDraft as Record<string, string>)[field.key]}
+                          onChange={(e) =>
+                            setSummaryDraft((prev) => ({ ...prev, [field.key]: e.target.value }))
+                          }
+                          className="mt-2 w-full rounded-lg px-2 py-2 text-[12px] outline-none resize-none"
+                          rows={field.rows}
+                          style={{ background: "white", border: "1px solid rgba(59,130,246,0.15)" }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  buildTemplateBlocks({
+                    notes: workspace.note.doctorNotes,
+                    symptoms: (workspace.note.symptoms || []).join(", "),
+                    examination: workspace.note.examinationFindings,
+                    issues: workspace.note.diagnosisSummary,
+                    plan: workspace.note.plan,
+                    advice: workspace.prescription?.advice,
+                  })
+                )
               ) : (
                 <p className="text-[13px]" style={{ color: "#94A3B8" }}>No note available yet.</p>
               )}
@@ -282,6 +410,36 @@ export function SummaryView({
                 >
                   <CheckCircle2 size={14} /> Finalize Note
                 </button>
+                {workspace?.note && (
+                  editingSummary ? (
+                    <button
+                      onClick={handleSaveSummary}
+                      disabled={saving}
+                      className="flex items-center gap-2 px-3 py-[8px] rounded-xl text-[12px] font-medium"
+                      style={{ background: "#EFF6FF", color: "#1D4ED8", border: "1px solid rgba(59,130,246,0.2)" }}
+                    >
+                      <Save size={14} /> Save Summary
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setEditingSummary(true)}
+                      className="flex items-center gap-2 px-3 py-[8px] rounded-xl text-[12px] font-medium"
+                      style={{ background: "#EFF6FF", color: "#1D4ED8", border: "1px solid rgba(59,130,246,0.2)" }}
+                    >
+                      <Save size={14} /> Edit Summary
+                    </button>
+                  )
+                )}
+                {workspace?.note && (
+                  <button
+                    onClick={handleRegenerateAi}
+                    disabled={saving}
+                    className="flex items-center gap-2 px-3 py-[8px] rounded-xl text-[12px] font-medium"
+                    style={{ background: "#FFF7ED", color: "#B45309", border: "1px solid rgba(251,191,36,0.3)" }}
+                  >
+                    Regenerate AI
+                  </button>
+                )}
               </div>
             </div>
 
@@ -470,18 +628,6 @@ export function SummaryView({
                   ))}
                 </ul>
               )}
-            </div>
-
-            <div className="rounded-2xl p-5" style={{ background: "white", border: "1px solid rgba(59,130,246,0.09)" }}>
-              <h3 className="text-[15px] font-semibold mb-3" style={{ color: "#0F1F3D" }}>AI Analysis</h3>
-              <div className="text-[13px]" style={{ color: "#334155", lineHeight: 1.6 }}>
-                <p><strong>Chief Complaint:</strong> {workspace?.note?.chiefComplaint || "-"}</p>
-                <p><strong>Symptoms:</strong> {(workspace?.note?.symptoms || []).join(", ") || "-"}</p>
-                <p><strong>Medical History:</strong> {workspace?.note?.medicalHistory || "-"}</p>
-                <p><strong>Possible Diagnosis:</strong> {workspace?.note?.diagnosisSummary || "-"}</p>
-                <p><strong>Suggested Prescription:</strong> {workspace?.prescription?.advice || "-"}</p>
-                <p><strong>Follow-up:</strong> {workspace?.prescription?.followUp || workspace?.note?.followUpInstructions || "-"}</p>
-              </div>
             </div>
 
             <div className="rounded-2xl p-5" style={{ background: "white", border: "1px solid rgba(59,130,246,0.09)" }}>
